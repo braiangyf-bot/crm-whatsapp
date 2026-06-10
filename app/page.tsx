@@ -33,16 +33,7 @@ async function crearCliente(formData: FormData) {
   revalidatePath("/");
 }
 
-async function actualizarEstadoCliente(id: string, estado: string) {
-  "use server";
 
-  await prisma.clientes.update({
-    where: { id },
-    data: { estado },
-  });
-
-  revalidatePath("/");
-}
 
 export default async function Home({
   searchParams,
@@ -172,21 +163,21 @@ const noResponde = todosLosClientes.filter((c) => c.estado === "no_responde").le
           </thead>
 
           <tbody>
-            {clientes.map((cliente) => (
-              <tr key={cliente.id}>
-                <td className="border p-3">{cliente.nombre}</td>
-                <td className="border p-3">{cliente.telefono}</td>
+  {clientes.map((cliente) => (
+    <tr key={cliente.id}>
+      <td className="border p-3">{cliente.nombre}</td>
 
-                <td className="border p-3">
-                  <EstadoSelect
-                    clienteId={cliente.id}
-                    estadoActual={cliente.estado || "pendiente"}
-                    actualizarEstadoCliente={actualizarEstadoCliente}
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
+      <td className="border p-3">{cliente.telefono}</td>
+
+      <td className="border p-3">
+        <EstadoSelect
+  clienteId={cliente.id}
+  estadoActual={cliente.estado || "pendiente"}
+/>
+      </td>
+    </tr>
+  ))}
+</tbody>
         </table>
       </div>
     </main>
