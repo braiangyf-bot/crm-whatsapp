@@ -1,9 +1,5 @@
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
-import EstadoSelect from "@/app/components/EstadoSelect";
-import LimpiarBusqueda from "@/app/components/LimpiarBusqueda";
-
-export const dynamic = "force-dynamic";
 
 type Cliente = {
   id: string;
@@ -22,65 +18,53 @@ async function crearCliente(formData: FormData) {
 
   if (!nombre || !telefono) return;
 
-  await prisma.clientes.create({
-    data: {
-      nombre,
-      telefono,
-      estado,
-    },
-  });
+  try {
+    await prisma.clientes.create({
+      data: {
+        nombre,
+        telefono,
+        estado,
+      },
+    });
 
-  revalidatePath("/");
-}
-
-async function actualizarEstadoCliente(id: string, estado: string) {
-  "use server";
-
-  await prisma.clientes.update({
-    where: { id },
-    data: { estado },
-  });
-
-  revalidatePath("/");
+    revalidatePath("/");
+  } catch (error) {
+    console.error("Error creando cliente:", error);
+  }
 }
 
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ search?: string }>;
+  searchParams: Promise<{
+    search?: string;
+  }>;
 }) {
   const params = await searchParams;
   const search = (params.search || "").trim();
-
-  const palabras = search
-    .split(" ")
-    .map((p) => p.trim())
-    .filter(Boolean);
 
   const clientes: Cliente[] = search
     ? await prisma.$queryRaw<Cliente[]>`
         SELECT id, created_at, nombre, telefono, estado
         FROM clientes
-        WHERE 
-          telefono ILIKE ${`%${search}%`}
-          OR EXISTS (
-            SELECT 1
-            FROM unnest(${palabras}::text[]) AS palabra
-            WHERE nombre ILIKE '%' || palabra || '%'
-          )
+        WHERE nombre ILIKE ${`%${search}%`}
+           OR telefono ILIKE ${`%${search}%`}
         ORDER BY created_at DESC
       `
     : await prisma.clientes.findMany({
-        orderBy: { created_at: "desc" },
+        orderBy: {
+          created_at: "desc",
+        },
       });
 
-  const todosLosClientes = await prisma.clientes.findMany();
+  console.log("BUSCANDO:", search);
+  console.log("RESULTADOS:", clientes.length);
 
-const pendientes = todosLosClientes.filter((c) => c.estado === "pendiente").length;
-const contactados = todosLosClientes.filter((c) => c.estado === "contactado").length;
-const interesados = todosLosClientes.filter((c) => c.estado === "interesado").length;
-const clientesActivos = todosLosClientes.filter((c) => c.estado === "cliente").length;
-const noResponde = todosLosClientes.filter((c) => c.estado === "no_responde").length;
+  const pendientes = clientes.filter((c) => c.estado === "pendiente").length;
+  const contactados = clientes.filter((c) => c.estado === "contactado").length;
+  const interesados = clientes.filter((c) => c.estado === "interesado").length;
+  const clientesActivos = clientes.filter((c) => c.estado === "cliente").length;
+  const noResponde = clientes.filter((c) => c.estado === "no_responde").length;
 
   return (
     <main className="p-8 max-w-7xl mx-auto">
@@ -113,7 +97,10 @@ const noResponde = todosLosClientes.filter((c) => c.estado === "no_responde").le
         </div>
       </div>
 
-      <form action={crearCliente} className="flex flex-col md:flex-row gap-2 mb-8">
+      <form
+        action={crearCliente}
+        className="flex flex-col md:flex-row gap-2 mb-8"
+      >
         <input
           name="nombre"
           placeholder="Nombre"
@@ -128,7 +115,11 @@ const noResponde = todosLosClientes.filter((c) => c.estado === "no_responde").le
           required
         />
 
-        <select name="estado" className="border p-2 rounded" defaultValue="pendiente">
+        <select
+          name="estado"
+          className="border p-2 rounded"
+          defaultValue="pendiente"
+        >
           <option value="pendiente">Pendiente</option>
           <option value="contactado">Contactado</option>
           <option value="interesado">Interesado</option>
@@ -136,7 +127,10 @@ const noResponde = todosLosClientes.filter((c) => c.estado === "no_responde").le
           <option value="no_responde">No responde</option>
         </select>
 
-        <button type="submit" className="bg-black text-white px-4 py-2 rounded">
+        <button
+          type="submit"
+          className="bg-black text-white px-4 py-2 rounded"
+        >
           Guardar
         </button>
       </form>
@@ -150,11 +144,18 @@ const noResponde = todosLosClientes.filter((c) => c.estado === "no_responde").le
           className="border p-3 rounded flex-1"
         />
 
-        <button type="submit" className="bg-blue-600 text-white px-4 rounded">
+        <button
+          type="submit"
+          className="bg-blue-600 text-white px-4 rounded"
+        >
           Buscar
         </button>
 
-        {search && <LimpiarBusqueda />}
+        {search && (
+          <a href="/" className="bg-gray-200 px-4 py-3 rounded">
+            Limpiar
+          </a>
+        )}
       </form>
 
       <p className="mb-4 font-semibold">
@@ -178,11 +179,21 @@ const noResponde = todosLosClientes.filter((c) => c.estado === "no_responde").le
                 <td className="border p-3">{cliente.telefono}</td>
 
                 <td className="border p-3">
-                  <EstadoSelect
-                    clienteId={cliente.id}
-                    estadoActual={cliente.estado || "pendiente"}
-                    actualizarEstadoCliente={actualizarEstadoCliente}
-                  />
+                  <span
+                    className={
+                      cliente.estado === "pendiente"
+                        ? "bg-yellow-100 text-yellow-800 px-2 py-1 rounded"
+                        : cliente.estado === "contactado"
+                        ? "bg-blue-100 text-blue-800 px-2 py-1 rounded"
+                        : cliente.estado === "interesado"
+                        ? "bg-green-100 text-green-800 px-2 py-1 rounded"
+                        : cliente.estado === "cliente"
+                        ? "bg-purple-100 text-purple-800 px-2 py-1 rounded"
+                        : "bg-red-100 text-red-800 px-2 py-1 rounded"
+                    }
+                  >
+                    {cliente.estado}
+                  </span>
                 </td>
               </tr>
             ))}
