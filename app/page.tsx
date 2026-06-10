@@ -65,14 +65,13 @@ export default async function Home({
         orderBy: { created_at: "desc" },
       });
 
-  const todosLosClientes = await prisma.clientes.findMany();
+  const todosLosClientes: Cliente[] = await prisma.clientes.findMany();
 
-const pendientes = todosLosClientes.filter((c) => c.estado === "pendiente").length;
-const contactados = todosLosClientes.filter((c) => c.estado === "contactado").length;
-const interesados = todosLosClientes.filter((c) => c.estado === "interesado").length;
-const clientesActivos = todosLosClientes.filter((c) => c.estado === "cliente").length;
-const noResponde = todosLosClientes.filter((c) => c.estado === "no_responde").length;
-
+const pendientes = todosLosClientes.filter((c: Cliente) => c.estado === "pendiente").length;
+const contactados = todosLosClientes.filter((c: Cliente) => c.estado === "contactado").length;
+const interesados = todosLosClientes.filter((c: Cliente) => c.estado === "interesado").length;
+const clientesActivos = todosLosClientes.filter((c: Cliente) => c.estado === "cliente").length;
+const noResponde = todosLosClientes.filter((c: Cliente) => c.estado === "no_responde").length;
   return (
     <main className="p-8 max-w-7xl mx-auto">
       <h1 className="text-3xl font-bold mb-6">CRM WhatsApp</h1>
