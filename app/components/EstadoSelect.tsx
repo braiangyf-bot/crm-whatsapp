@@ -23,25 +23,28 @@ export default function EstadoSelect({ clienteId, estadoActual }: Props) {
       : "bg-red-100 text-red-800 border-red-300";
 
   async function cambiarEstado(nuevoEstado: string) {
+    const estadoAnterior = estado;
+
+    setEstado(nuevoEstado);
     setGuardando(true);
 
-    const respuesta = await fetch("/api/clientes", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: clienteId, estado: nuevoEstado }),
-    });
+    try {
+      const respuesta = await fetch("/api/clientes", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: clienteId, estado: nuevoEstado }),
+      });
 
-    if (respuesta.ok) {
-  setEstado(nuevoEstado);
-
-  setTimeout(() => {
-    window.location.reload();
-  }, 1500);
-} else {
-  alert("No se pudo actualizar el estado");
-}
-
-    setGuardando(false);
+      if (!respuesta.ok) {
+        setEstado(estadoAnterior);
+        alert("No se pudo actualizar el estado");
+      }
+    } catch (error) {
+      setEstado(estadoAnterior);
+      alert("Error de conexión al actualizar el estado");
+    } finally {
+      setGuardando(false);
+    }
   }
 
   return (

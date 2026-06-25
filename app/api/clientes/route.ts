@@ -16,7 +16,10 @@ export async function PUT(request: Request) {
 
     const clienteActualizado = await prisma.clientes.update({
       where: { id },
-      data: { estado },
+      data: {
+        estado,
+        ultimo_contacto: new Date(),
+      },
     });
 
     console.log("CLIENTE ACTUALIZADO:", clienteActualizado);
@@ -27,6 +30,34 @@ export async function PUT(request: Request) {
 
     return NextResponse.json(
       { error: "Error actualizando estado" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { id } = await request.json();
+
+    console.log("ELIMINANDO CLIENTE:", { id });
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "Falta el ID del cliente" },
+        { status: 400 }
+      );
+    }
+
+    await prisma.clientes.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error("ERROR ELIMINANDO CLIENTE:", error);
+
+    return NextResponse.json(
+      { error: "Error al eliminar cliente" },
       { status: 500 }
     );
   }

@@ -9,7 +9,7 @@ export default function LimpiarBusqueda() {
       }}
       className="bg-gray-200 px-4 py-3 rounded"
     >
-      Actualizar
+      Limpiar filtros
     </button>
   );
 }

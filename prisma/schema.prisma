@@ -8,9 +8,64 @@ datasource db {
 }
 
 model clientes {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  created_at DateTime @default(now()) @db.Timestamptz(6)
-  nombre     String
-  telefono   String   @unique
-  estado     String?  @default("pendiente")
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at        DateTime            @default(now()) @db.Timestamptz(6)
+  nombre            String
+  telefono          String              @unique
+  estado            String?             @default("pendiente")
+  ultimo_contacto   DateTime?           @db.Timestamptz(6)
+  notas             String?
+  cedula            String              @unique @default("sin_cedula")
+  campanas_enviadas campanas_enviadas[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model plantillas {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at        DateTime?           @default(now()) @db.Timestamptz(6)
+  nombre            String
+  mensaje           String
+  activa            Boolean?            @default(true)
+  campanas_enviadas campanas_enviadas[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model campanas_enviadas {
+  id                  String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at          DateTime?       @default(now()) @db.Timestamptz(6)
+  cliente_id          String          @db.Uuid
+  plantilla_id        String?         @db.Uuid
+  nombre_cliente      String?
+  telefono_cliente    String?
+  nombre_plantilla    String?
+  mensaje_enviado     String
+  estado              String?         @default("abierta_whatsapp")
+  canal               String?         @default("whatsapp_web")
+  whatsapp_message_id String?
+  estado_api          String?
+  error_api           String?
+  fecha_enviado_api   DateTime?       @db.Timestamptz(6)
+  fecha_entregado     DateTime?       @db.Timestamptz(6)
+  fecha_leido         DateTime?       @db.Timestamptz(6)
+  fecha_fallido       DateTime?       @db.Timestamptz(6)
+  lote_id             String?         @db.Uuid
+  clientes            clientes        @relation(fields: [cliente_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  campanas_lotes      campanas_lotes? @relation(fields: [lote_id], references: [id], onUpdate: NoAction)
+  plantillas          plantillas?     @relation(fields: [plantilla_id], references: [id], onUpdate: NoAction)
+
+  @@index([lote_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model campanas_lotes {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at        DateTime            @default(now()) @db.Timestamptz(6)
+  nombre_plantilla  String
+  mensaje           String?
+  total_clientes    Int                 @default(0)
+  total_enviadas    Int                 @default(0)
+  total_fallidas    Int                 @default(0)
+  estado            String              @default("procesando")
+  campanas_enviadas campanas_enviadas[]
 }
