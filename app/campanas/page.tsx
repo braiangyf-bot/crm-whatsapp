@@ -182,30 +182,89 @@ function claseEstadoApi(estadoApi: string | null): string {
 
 function limpiarError(errorApi: string | null): string {
   if (!errorApi) {
-    return "—";
+    return "\u2014";
   }
 
   try {
     const parsed = JSON.parse(errorApi) as {
-      error?: {
+      errors?: Array<{
+        code?: number | string;
+        title?: string;
         message?: string;
-        error_user_msg?: string;
-        error_user_title?: string;
-      } | string;
+        error_data?: {
+          details?: string;
+        };
+      }>;
+      error?:
+        | {
+            code?: number | string;
+            message?: string;
+            error_user_msg?: string;
+            error_user_title?: string;
+            error_data?: {
+              details?: string;
+            };
+          }
+        | string;
       message?: string;
+      recipient_id?: string | null;
     };
 
-    if (typeof parsed.error === "string") {
-      return parsed.error;
-    }
+    const errorWebhook = Array.isArray(parsed.errors)
+      ? parsed.errors[0]
+      : undefined;
+
+    const errorDirecto =
+      typeof parsed.error === "object" && parsed.error
+        ? parsed.error
+        : undefined;
+
+    const codigo =
+      errorWebhook?.code ??
+      errorDirecto?.code;
+
+    const titulo =
+      errorWebhook?.title ??
+      errorDirecto?.error_user_title;
 
     const mensaje =
-      parsed.error?.message ||
-      parsed.error?.error_user_msg ||
-      parsed.error?.error_user_title ||
-      parsed.message;
+      errorWebhook?.error_data?.details ||
+      errorWebhook?.message ||
+      errorDirecto?.error_user_msg ||
+      errorDirecto?.error_data?.details ||
+      errorDirecto?.message ||
+      parsed.message ||
+      (typeof parsed.error === "string"
+        ? parsed.error
+        : undefined);
 
-    return mensaje || JSON.stringify(parsed, null, 2);
+    const partes: string[] = [];
+
+    if (codigo !== undefined) {
+      partes.push(`Codigo Meta: ${codigo}`);
+    }
+
+    if (String(codigo) === "131049") {
+      partes.push(
+        "Meta bloqueo la entrega para mantener una interaccion saludable con el destinatario."
+      );
+    }
+
+    if (titulo && titulo !== mensaje) {
+      partes.push(`Titulo: ${titulo}`);
+    }
+
+    if (mensaje) {
+      partes.push(`Detalle: ${mensaje}`);
+    }
+
+    if (parsed.recipient_id) {
+      partes.push(`Destinatario: ${parsed.recipient_id}`);
+    }
+
+    return partes.length > 0
+      ? partes.join("\n")
+      : JSON.stringify(parsed, null, 2);
   } catch {
     return errorApi;
   }
