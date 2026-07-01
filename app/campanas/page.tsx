@@ -196,16 +196,16 @@ function limpiarError(errorApi: string | null): string {
         };
       }>;
       error?:
-        | {
-            code?: number | string;
-            message?: string;
-            error_user_msg?: string;
-            error_user_title?: string;
-            error_data?: {
-              details?: string;
-            };
-          }
-        | string;
+      | {
+        code?: number | string;
+        message?: string;
+        error_user_msg?: string;
+        error_user_title?: string;
+        error_data?: {
+          details?: string;
+        };
+      }
+      | string;
       message?: string;
       recipient_id?: string | null;
     };
@@ -458,43 +458,46 @@ export default async function CampanasPage({
 
   const resumenEnviosResultado =
     await prisma.$queryRaw<ResumenEnvios[]>`
-      SELECT
-        COUNT(*)::int AS total,
+    SELECT
+      COUNT(*)::int AS total,
 
-        COUNT(*) FILTER (
-          WHERE estado = 'enviada_api'
-        )::int AS enviadas,
+      COUNT(*) FILTER (
+        WHERE whatsapp_message_id IS NOT NULL
+      )::int AS aceptadas,
 
-        COUNT(*) FILTER (
-          WHERE estado = 'fallida_api'
-        )::int AS fallidas,
+      COUNT(*) FILTER (
+        WHERE estado_api IN (
+          'sent',
+          'delivered',
+          'read'
+        )
+      )::int AS enviadas,
 
-        COUNT(*) FILTER (
-          WHERE estado_api IN (
-            'accepted',
-            'sent',
-            'delivered',
-            'read'
-          )
-        )::int AS aceptadas,
+      COUNT(*) FILTER (
+        WHERE estado_api IN (
+          'delivered',
+          'read'
+        )
+        OR fecha_entregado IS NOT NULL
+      )::int AS entregadas,
 
-        COUNT(*) FILTER (
-          WHERE estado_api = 'delivered'
-          OR fecha_entregado IS NOT NULL
-        )::int AS entregadas,
+      COUNT(*) FILTER (
+        WHERE estado_api = 'read'
+        OR fecha_leido IS NOT NULL
+      )::int AS leidas,
 
-        COUNT(*) FILTER (
-          WHERE estado_api = 'read'
-          OR fecha_leido IS NOT NULL
-        )::int AS leidas,
+      COUNT(*) FILTER (
+        WHERE estado_api = 'failed'
+        OR estado = 'fallida_api'
+      )::int AS fallidas,
 
-        COUNT(*) FILTER (
-          WHERE estado_api = 'invalid_phone'
-        )::int AS telefonos_invalidos
+      COUNT(*) FILTER (
+        WHERE estado_api = 'invalid_phone'
+      )::int AS telefonos_invalidos
 
-      FROM public.campanas_enviadas
-      ${whereEnvios}
-    `;
+    FROM public.campanas_enviadas
+    ${whereEnvios}
+  `;
 
   const resumenEnvios = resumenEnviosResultado[0] || {
     total: 0,
@@ -1038,28 +1041,19 @@ export default async function CampanasPage({
 
             <div className="rounded-xl border bg-white p-4 shadow-sm">
               <p className="text-xs text-gray-500">
-                Enviadas
-              </p>
-              <p className="text-xl font-bold text-green-700">
-                {resumenEnvios.enviadas}
-              </p>
-            </div>
-
-            <div className="rounded-xl border bg-white p-4 shadow-sm">
-              <p className="text-xs text-gray-500">
-                Fallidas
-              </p>
-              <p className="text-xl font-bold text-red-700">
-                {resumenEnvios.fallidas}
-              </p>
-            </div>
-
-            <div className="rounded-xl border bg-white p-4 shadow-sm">
-              <p className="text-xs text-gray-500">
-                Aceptadas
+                Aceptadas por Meta
               </p>
               <p className="text-xl font-bold text-blue-700">
                 {resumenEnvios.aceptadas}
+              </p>
+            </div>
+
+            <div className="rounded-xl border bg-white p-4 shadow-sm">
+              <p className="text-xs text-gray-500">
+                Enviadas por Meta
+              </p>
+              <p className="text-xl font-bold text-green-700">
+                {resumenEnvios.enviadas}
               </p>
             </div>
 
@@ -1078,6 +1072,15 @@ export default async function CampanasPage({
               </p>
               <p className="text-xl font-bold text-blue-700">
                 {resumenEnvios.leidas}
+              </p>
+            </div>
+
+            <div className="rounded-xl border bg-white p-4 shadow-sm">
+              <p className="text-xs text-gray-500">
+                Fallidas
+              </p>
+              <p className="text-xl font-bold text-red-700">
+                {resumenEnvios.fallidas}
               </p>
             </div>
 
@@ -1327,7 +1330,7 @@ export default async function CampanasPage({
 
                         <td className="min-w-[190px] whitespace-nowrap px-4 py-3 text-xs text-gray-600">
                           <div>
-                            Enviado:{" "}
+                            Aceptado por Meta:{" "}
                             {formatearFecha(
                               envio.fecha_enviado_api
                             )}
@@ -1461,9 +1464,9 @@ export default async function CampanasPage({
           <p className="text-xs text-gray-500">
             Los registros anteriores a la creación del
             control por lotes pueden aparecer como
-            “Individual”. Los estados entregado y leído se
-            actualizarán cuando el webhook de Meta esté
-            conectado.
+            “Individual”. Los estados de entrega, lectura y
+            fallo se actualizan automáticamente mediante el
+            webhook de Meta.
           </p>
         </section>
       </div>
