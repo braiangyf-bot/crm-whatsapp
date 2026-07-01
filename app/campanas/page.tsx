@@ -768,7 +768,7 @@ export default async function CampanasPage({
                     <th className="px-4 py-3">Fecha</th>
                     <th className="px-4 py-3">Plantilla</th>
                     <th className="px-4 py-3">Clientes</th>
-                    <th className="px-4 py-3">Enviadas</th>
+                    <th className="px-4 py-3">Aceptadas</th>
                     <th className="px-4 py-3">Fallidas</th>
                     <th className="px-4 py-3">Estado</th>
                     <th className="px-4 py-3">Acción</th>
@@ -996,7 +996,7 @@ export default async function CampanasPage({
 
               <div>
                 <p className="text-xs font-semibold uppercase text-blue-600">
-                  Enviadas
+                  Aceptadas
                 </p>
                 <p className="mt-1 text-sm font-semibold text-green-700">
                   {loteSeleccionado.total_enviadas}
