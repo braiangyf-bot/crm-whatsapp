@@ -325,15 +325,64 @@ export default async function CampanasPage({
   `;
 
   const resumenLotesResultado =
-    await prisma.$queryRaw<ResumenLotes[]>`
+  await prisma.$queryRaw<ResumenLotes[]>`
+    WITH lotes_actuales AS (
       SELECT
-        COUNT(*)::int AS total_lotes,
-        COALESCE(SUM(total_clientes), 0)::int AS total_clientes,
-        COALESCE(SUM(total_enviadas), 0)::int AS total_enviadas,
-        COALESCE(SUM(total_fallidas), 0)::int AS total_fallidas
-      FROM public.campanas_lotes
-      ${whereLotes}
-    `;
+        lote.id::text AS id,
+        lote.nombre_plantilla,
+        lote.mensaje,
+        lote.total_clientes,
+
+        COUNT(envio.id) FILTER (
+          WHERE envio.whatsapp_message_id IS NOT NULL
+        )::int AS total_enviadas,
+
+        COUNT(envio.id) FILTER (
+          WHERE envio.estado_api = 'failed'
+          OR envio.estado = 'fallida_api'
+        )::int AS total_fallidas,
+
+        CASE
+          WHEN lote.estado = 'procesando' THEN
+            'procesando'
+
+          WHEN COUNT(envio.id) FILTER (
+            WHERE envio.estado_api = 'failed'
+            OR envio.estado = 'fallida_api'
+          ) = 0 THEN
+            'finalizado'
+
+          WHEN COUNT(envio.id) FILTER (
+            WHERE envio.whatsapp_message_id IS NOT NULL
+          ) > 0 THEN
+            'finalizado_con_errores'
+
+          ELSE
+            'fallido'
+        END AS estado
+
+      FROM public.campanas_lotes AS lote
+
+      LEFT JOIN public.campanas_enviadas AS envio
+        ON envio.lote_id = lote.id
+
+      GROUP BY
+        lote.id,
+        lote.nombre_plantilla,
+        lote.mensaje,
+        lote.total_clientes,
+        lote.estado
+    )
+
+    SELECT
+      COUNT(*)::int AS total_lotes,
+      COALESCE(SUM(total_clientes), 0)::int AS total_clientes,
+      COALESCE(SUM(total_enviadas), 0)::int AS total_enviadas,
+      COALESCE(SUM(total_fallidas), 0)::int AS total_fallidas
+
+    FROM lotes_actuales
+    ${whereLotes}
+  `;
 
   const resumenLotes = resumenLotesResultado[0] || {
     total_lotes: 0,
@@ -363,38 +412,131 @@ export default async function CampanasPage({
   );
 
   const lotes = await prisma.$queryRaw<Lote[]>`
+  WITH lotes_actuales AS (
     SELECT
-      id::text,
-      created_at,
-      nombre_plantilla,
-      mensaje,
-      total_clientes,
-      total_enviadas,
-      total_fallidas,
-      estado
-    FROM public.campanas_lotes
-    ${whereLotes}
-    ORDER BY created_at DESC
-    LIMIT ${LOTES_POR_PAGINA}
-    OFFSET ${offsetLotes}
-  `;
+      lote.id::text AS id,
+      lote.created_at,
+      lote.nombre_plantilla,
+      lote.mensaje,
+      lote.total_clientes,
 
-  const loteSeleccionadoResultado = loteId
-    ? await prisma.$queryRaw<Lote[]>`
-        SELECT
-          id::text,
-          created_at,
-          nombre_plantilla,
-          mensaje,
-          total_clientes,
-          total_enviadas,
-          total_fallidas,
-          estado
-        FROM public.campanas_lotes
-        WHERE id = ${loteId}::uuid
-        LIMIT 1
-      `
-    : [];
+      COUNT(envio.id) FILTER (
+        WHERE envio.whatsapp_message_id IS NOT NULL
+      )::int AS total_enviadas,
+
+      COUNT(envio.id) FILTER (
+        WHERE envio.estado_api = 'failed'
+        OR envio.estado = 'fallida_api'
+      )::int AS total_fallidas,
+
+      CASE
+        WHEN lote.estado = 'procesando' THEN
+          'procesando'
+
+        WHEN COUNT(envio.id) FILTER (
+          WHERE envio.estado_api = 'failed'
+          OR envio.estado = 'fallida_api'
+        ) = 0 THEN
+          'finalizado'
+
+        WHEN COUNT(envio.id) FILTER (
+          WHERE envio.whatsapp_message_id IS NOT NULL
+        ) > 0 THEN
+          'finalizado_con_errores'
+
+        ELSE
+          'fallido'
+      END AS estado
+
+    FROM public.campanas_lotes AS lote
+
+    LEFT JOIN public.campanas_enviadas AS envio
+      ON envio.lote_id = lote.id
+
+    GROUP BY
+      lote.id,
+      lote.created_at,
+      lote.nombre_plantilla,
+      lote.mensaje,
+      lote.total_clientes,
+      lote.estado
+  )
+
+  SELECT
+    id,
+    created_at,
+    nombre_plantilla,
+    mensaje,
+    total_clientes,
+    total_enviadas,
+    total_fallidas,
+    estado
+  FROM lotes_actuales
+  ${whereLotes}
+  ORDER BY created_at DESC
+  LIMIT ${LOTES_POR_PAGINA}
+  OFFSET ${offsetLotes}
+`;
+
+ const loteSeleccionadoResultado = loteId
+  ? await prisma.$queryRaw<Lote[]>`
+      SELECT
+        lote.id::text AS id,
+        lote.created_at,
+        lote.nombre_plantilla,
+        lote.mensaje,
+        lote.total_clientes,
+
+        (
+          COUNT(envio.id) FILTER (
+            WHERE envio.whatsapp_message_id IS NOT NULL
+          )
+        )::int AS total_enviadas,
+
+        (
+          COUNT(envio.id) FILTER (
+            WHERE envio.estado_api = 'failed'
+            OR envio.estado = 'fallida_api'
+          )
+        )::int AS total_fallidas,
+
+        CASE
+          WHEN lote.estado = 'procesando' THEN
+            'procesando'
+
+          WHEN COUNT(envio.id) FILTER (
+            WHERE envio.estado_api = 'failed'
+            OR envio.estado = 'fallida_api'
+          ) = 0 THEN
+            'finalizado'
+
+          WHEN COUNT(envio.id) FILTER (
+            WHERE envio.whatsapp_message_id IS NOT NULL
+          ) > 0 THEN
+            'finalizado_con_errores'
+
+          ELSE
+            'fallido'
+        END AS estado
+
+      FROM public.campanas_lotes AS lote
+
+      LEFT JOIN public.campanas_enviadas AS envio
+        ON envio.lote_id = lote.id
+
+      WHERE lote.id = ${loteId}::uuid
+
+      GROUP BY
+        lote.id,
+        lote.created_at,
+        lote.nombre_plantilla,
+        lote.mensaje,
+        lote.total_clientes,
+        lote.estado
+
+      LIMIT 1
+    `
+  : [];
 
   const loteSeleccionado =
     loteSeleccionadoResultado[0] || null;
