@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import LimpiarBusqueda from "@/app/components/LimpiarBusqueda";
 import TablaClientes from "@/app/components/TablaClientes";
 import Link from "next/link";
+import BotonCerrarSesion from "@/components/BotonCerrarSesion";
 
 export const dynamic = "force-dynamic";
 
@@ -329,6 +330,7 @@ export default async function Home({
             Gestión de clientes, seguimiento comercial y campañas por WhatsApp API.
           </p>
         </div>
+        <BotonCerrarSesion />
 
         <div className="flex flex-wrap gap-2">
           <Link
