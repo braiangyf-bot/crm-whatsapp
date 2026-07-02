@@ -6,6 +6,7 @@ import LimpiarBusqueda from "@/app/components/LimpiarBusqueda";
 import TablaClientes from "@/app/components/TablaClientes";
 import Link from "next/link";
 import BotonCerrarSesion from "@/components/BotonCerrarSesion";
+import { exigirUsuarioPagina } from "@/lib/auth/exigirUsuarioPagina";
 
 export const dynamic = "force-dynamic";
 
@@ -151,6 +152,7 @@ export default async function Home({
     pagina?: string;
   }>;
 }) {
+  await exigirUsuarioPagina();
   const params = await searchParams;
 
   const search = (params.search || "").trim();

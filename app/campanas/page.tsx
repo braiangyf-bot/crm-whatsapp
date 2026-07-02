@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import Link from "next/link";
+import { exigirUsuarioPagina } from "@/lib/auth/exigirUsuarioPagina";
 
 export const dynamic = "force-dynamic";
 
@@ -275,6 +276,7 @@ export default async function CampanasPage({
 }: {
   searchParams: SearchParams;
 }) {
+  await exigirUsuarioPagina();
   const params = await searchParams;
 
   const loteSearch = String(params.lote_search || "").trim();
