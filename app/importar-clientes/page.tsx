@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useState, type SubmitEvent } from "react";
 
 type DetalleImportacion = {
   fila: number;
@@ -46,7 +46,7 @@ export default function ImportarClientesPage() {
     URL.revokeObjectURL(url);
   }
 
-  async function importar(event: FormEvent<HTMLFormElement>) {
+  async function importar(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setResultado(null);
