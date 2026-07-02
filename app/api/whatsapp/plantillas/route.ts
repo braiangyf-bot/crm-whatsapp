@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirUsuarioApi } from "@/lib/auth/exigirUsuarioApi";
 
 type MetaTemplateComponent = {
   type: string;
@@ -20,6 +21,12 @@ function contarVariables(texto: string) {
 }
 
 export async function GET() {
+  const autenticacion = await exigirUsuarioApi();
+
+  if (!autenticacion.ok) {
+    return autenticacion.response;
+  }
+
   try {
     const token = process.env.WHATSAPP_TOKEN;
     const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;

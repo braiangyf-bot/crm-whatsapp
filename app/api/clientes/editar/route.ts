@@ -1,7 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { exigirUsuarioApi } from "@/lib/auth/exigirUsuarioApi";
 
 export async function PUT(request: Request) {
+  const autenticacion = await exigirUsuarioApi();
+
+  if (!autenticacion.ok) {
+    return autenticacion.response;
+  }
+
   try {
     const body = await request.json();
 

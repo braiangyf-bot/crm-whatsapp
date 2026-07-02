@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { exigirUsuarioApi } from "@/lib/auth/exigirUsuarioApi";
 
 export const runtime = "nodejs";
 
@@ -230,7 +231,13 @@ return lotes;
 }
 
 export async function POST(request: Request) {
-try {
+  const autenticacion = await exigirUsuarioApi();
+
+  if (!autenticacion.ok) {
+    return autenticacion.response;
+  }
+
+  try {
 const formData = await request.formData();
 const entradaArchivo = formData.get("archivo");
 

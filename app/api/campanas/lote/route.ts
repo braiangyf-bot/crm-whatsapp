@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { exigirUsuarioApi } from "@/lib/auth/exigirUsuarioApi";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -167,6 +168,12 @@ async function enviarPlantillaMeta({
 }
 
 export async function POST(request: Request) {
+  const autenticacion = await exigirUsuarioApi();
+
+  if (!autenticacion.ok) {
+    return autenticacion.response;
+  }
+
   let loteId: string | null = null;
 
   try {
@@ -196,10 +203,10 @@ export async function POST(request: Request) {
       datos.cliente_ids
     )
       ? datos.cliente_ids
-          .map((id: unknown): string =>
-            String(id ?? "").trim()
-          )
-          .filter((id: string): boolean => id.length > 0)
+        .map((id: unknown): string =>
+          String(id ?? "").trim()
+        )
+        .filter((id: string): boolean => id.length > 0)
       : [];
 
     const clienteIds: string[] = Array.from(
@@ -352,189 +359,189 @@ export async function POST(request: Request) {
 
     for (const bloque of bloquesClientes) {
       for (const cliente of bloque) {
-      const telefonoNormalizado =
-        normalizarTelefonoColombia(cliente.telefono);
-
-      /*
-       * Teléfono inválido.
-       */
-      if (!telefonoNormalizado) {
-        const ahora = new Date();
-
-        await prisma.campanas_enviadas.create({
-          data: {
-            cliente_id: cliente.id,
-            plantilla_id: null,
-            lote_id: lote.id,
-            nombre_cliente: cliente.nombre,
-            telefono_cliente: cliente.telefono,
-            nombre_plantilla: templateName,
-            mensaje_enviado:
-              mensajeEnviado || templateName,
-            estado: "fallida_api",
-            canal: "api_oficial",
-            whatsapp_message_id: null,
-            estado_api: "invalid_phone",
-            error_api: JSON.stringify({
-              error:
-                "Teléfono inválido. Debe ser un celular colombiano válido.",
-              telefono_original: cliente.telefono,
-            }),
-            fecha_fallido: ahora,
-          },
-        });
-
-        totalFallidas += 1;
-
-        resultados.push({
-          cliente_id: cliente.id,
-          nombre: cliente.nombre,
-          telefono: cliente.telefono,
-          ok: false,
-          estado_api: "invalid_phone",
-          error: "Teléfono inválido.",
-        });
-
-        continue;
-      }
-
-      try {
-        const resultadoApi = await enviarPlantillaMeta({
-          telefono: telefonoNormalizado,
-          templateName,
-          language: templateLanguage,
-          variableCount,
-          nombreCliente: cliente.nombre,
-        });
+        const telefonoNormalizado =
+          normalizarTelefonoColombia(cliente.telefono);
 
         /*
-         * Meta aceptó el envío.
+         * Teléfono inválido.
          */
-        if (resultadoApi.ok) {
-          const whatsappMessageId =
-            resultadoApi.data.messages?.[0]?.id ?? null;
-
-          const estadoApi =
-            resultadoApi.data.messages?.[0]
-              ?.message_status ?? "accepted";
-
+        if (!telefonoNormalizado) {
           const ahora = new Date();
 
-          await prisma.$transaction([
-            prisma.campanas_enviadas.create({
-              data: {
-                cliente_id: cliente.id,
-                plantilla_id: null,
-                lote_id: lote.id,
-                nombre_cliente: cliente.nombre,
-                telefono_cliente: telefonoNormalizado,
-                nombre_plantilla: templateName,
-                mensaje_enviado:
-                  mensajeEnviado || templateName,
-                estado: "enviada_api",
-                canal: "api_oficial",
-                whatsapp_message_id: whatsappMessageId,
-                estado_api: estadoApi,
-                error_api: null,
-                fecha_enviado_api: ahora,
-              },
-            }),
+          await prisma.campanas_enviadas.create({
+            data: {
+              cliente_id: cliente.id,
+              plantilla_id: null,
+              lote_id: lote.id,
+              nombre_cliente: cliente.nombre,
+              telefono_cliente: cliente.telefono,
+              nombre_plantilla: templateName,
+              mensaje_enviado:
+                mensajeEnviado || templateName,
+              estado: "fallida_api",
+              canal: "api_oficial",
+              whatsapp_message_id: null,
+              estado_api: "invalid_phone",
+              error_api: JSON.stringify({
+                error:
+                  "Teléfono inválido. Debe ser un celular colombiano válido.",
+                telefono_original: cliente.telefono,
+              }),
+              fecha_fallido: ahora,
+            },
+          });
 
-            prisma.clientes.update({
-              where: {
-                id: cliente.id,
-              },
-              data: {
-                estado: nuevoEstadoCliente,
-                ultimo_contacto: ahora,
-              },
-            }),
-          ]);
-
-          totalEnviadas += 1;
+          totalFallidas += 1;
 
           resultados.push({
             cliente_id: cliente.id,
             nombre: cliente.nombre,
-            telefono: telefonoNormalizado,
-            ok: true,
-            estado_api: estadoApi,
-            whatsapp_message_id: whatsappMessageId,
+            telefono: cliente.telefono,
+            ok: false,
+            estado_api: "invalid_phone",
+            error: "Teléfono inválido.",
           });
 
           continue;
         }
 
-        /*
-         * Meta rechazó el envío.
-         */
-        await prisma.campanas_enviadas.create({
-          data: {
+        try {
+          const resultadoApi = await enviarPlantillaMeta({
+            telefono: telefonoNormalizado,
+            templateName,
+            language: templateLanguage,
+            variableCount,
+            nombreCliente: cliente.nombre,
+          });
+
+          /*
+           * Meta aceptó el envío.
+           */
+          if (resultadoApi.ok) {
+            const whatsappMessageId =
+              resultadoApi.data.messages?.[0]?.id ?? null;
+
+            const estadoApi =
+              resultadoApi.data.messages?.[0]
+                ?.message_status ?? "accepted";
+
+            const ahora = new Date();
+
+            await prisma.$transaction([
+              prisma.campanas_enviadas.create({
+                data: {
+                  cliente_id: cliente.id,
+                  plantilla_id: null,
+                  lote_id: lote.id,
+                  nombre_cliente: cliente.nombre,
+                  telefono_cliente: telefonoNormalizado,
+                  nombre_plantilla: templateName,
+                  mensaje_enviado:
+                    mensajeEnviado || templateName,
+                  estado: "enviada_api",
+                  canal: "api_oficial",
+                  whatsapp_message_id: whatsappMessageId,
+                  estado_api: estadoApi,
+                  error_api: null,
+                  fecha_enviado_api: ahora,
+                },
+              }),
+
+              prisma.clientes.update({
+                where: {
+                  id: cliente.id,
+                },
+                data: {
+                  estado: nuevoEstadoCliente,
+                  ultimo_contacto: ahora,
+                },
+              }),
+            ]);
+
+            totalEnviadas += 1;
+
+            resultados.push({
+              cliente_id: cliente.id,
+              nombre: cliente.nombre,
+              telefono: telefonoNormalizado,
+              ok: true,
+              estado_api: estadoApi,
+              whatsapp_message_id: whatsappMessageId,
+            });
+
+            continue;
+          }
+
+          /*
+           * Meta rechazó el envío.
+           */
+          await prisma.campanas_enviadas.create({
+            data: {
+              cliente_id: cliente.id,
+              plantilla_id: null,
+              lote_id: lote.id,
+              nombre_cliente: cliente.nombre,
+              telefono_cliente: telefonoNormalizado,
+              nombre_plantilla: templateName,
+              mensaje_enviado:
+                mensajeEnviado || templateName,
+              estado: "fallida_api",
+              canal: "api_oficial",
+              whatsapp_message_id: null,
+              estado_api: "failed",
+              error_api: JSON.stringify(resultadoApi.data),
+              fecha_fallido: new Date(),
+            },
+          });
+
+          totalFallidas += 1;
+
+          resultados.push({
             cliente_id: cliente.id,
-            plantilla_id: null,
-            lote_id: lote.id,
-            nombre_cliente: cliente.nombre,
-            telefono_cliente: telefonoNormalizado,
-            nombre_plantilla: templateName,
-            mensaje_enviado:
-              mensajeEnviado || templateName,
-            estado: "fallida_api",
-            canal: "api_oficial",
-            whatsapp_message_id: null,
+            nombre: cliente.nombre,
+            telefono: telefonoNormalizado,
+            ok: false,
             estado_api: "failed",
-            error_api: JSON.stringify(resultadoApi.data),
-            fecha_fallido: new Date(),
-          },
-        });
+            error: resultadoApi.data,
+          });
+        } catch (errorCliente) {
+          const detalle =
+            errorCliente instanceof Error
+              ? errorCliente.message
+              : String(errorCliente);
 
-        totalFallidas += 1;
+          await prisma.campanas_enviadas.create({
+            data: {
+              cliente_id: cliente.id,
+              plantilla_id: null,
+              lote_id: lote.id,
+              nombre_cliente: cliente.nombre,
+              telefono_cliente: telefonoNormalizado,
+              nombre_plantilla: templateName,
+              mensaje_enviado:
+                mensajeEnviado || templateName,
+              estado: "fallida_api",
+              canal: "api_oficial",
+              whatsapp_message_id: null,
+              estado_api: "failed",
+              error_api: JSON.stringify({
+                error: detalle,
+              }),
+              fecha_fallido: new Date(),
+            },
+          });
 
-        resultados.push({
-          cliente_id: cliente.id,
-          nombre: cliente.nombre,
-          telefono: telefonoNormalizado,
-          ok: false,
-          estado_api: "failed",
-          error: resultadoApi.data,
-        });
-      } catch (errorCliente) {
-        const detalle =
-          errorCliente instanceof Error
-            ? errorCliente.message
-            : String(errorCliente);
+          totalFallidas += 1;
 
-        await prisma.campanas_enviadas.create({
-          data: {
+          resultados.push({
             cliente_id: cliente.id,
-            plantilla_id: null,
-            lote_id: lote.id,
-            nombre_cliente: cliente.nombre,
-            telefono_cliente: telefonoNormalizado,
-            nombre_plantilla: templateName,
-            mensaje_enviado:
-              mensajeEnviado || templateName,
-            estado: "fallida_api",
-            canal: "api_oficial",
-            whatsapp_message_id: null,
+            nombre: cliente.nombre,
+            telefono: telefonoNormalizado,
+            ok: false,
             estado_api: "failed",
-            error_api: JSON.stringify({
-              error: detalle,
-            }),
-            fecha_fallido: new Date(),
-          },
-        });
-
-        totalFallidas += 1;
-
-        resultados.push({
-          cliente_id: cliente.id,
-          nombre: cliente.nombre,
-          telefono: telefonoNormalizado,
-          ok: false,
-          estado_api: "failed",
-          error: detalle,
-        });
-      }
+            error: detalle,
+          });
+        }
       }
     }
 

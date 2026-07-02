@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { exigirUsuarioApi } from "@/lib/auth/exigirUsuarioApi";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -105,6 +106,12 @@ async function enviarPlantillaMeta({
 }
 
 export async function POST(request: Request) {
+  const autenticacion = await exigirUsuarioApi();
+
+  if (!autenticacion.ok) {
+    return autenticacion.response;
+  }
+
   try {
     const body = await request.json();
 
