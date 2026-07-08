@@ -115,6 +115,12 @@ export async function PUT(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const autenticacion = await exigirUsuarioApi();
+
+  if (!autenticacion.ok) {
+    return autenticacion.response;
+  }
+
   try {
     const { id } = await request.json();
 

@@ -8,15 +8,16 @@ datasource db {
 }
 
 model clientes {
-  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  created_at        DateTime            @default(now()) @db.Timestamptz(6)
-  nombre            String
-  telefono          String              @unique
-  estado            String?             @default("pendiente")
-  ultimo_contacto   DateTime?           @db.Timestamptz(6)
-  notas             String?
-  cedula            String              @unique @default("sin_cedula")
-  campanas_enviadas campanas_enviadas[]
+  id                      String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at              DateTime                  @default(now()) @db.Timestamptz(6)
+  nombre                  String
+  telefono                String                    @unique
+  estado                  String?                   @default("pendiente")
+  ultimo_contacto         DateTime?                 @db.Timestamptz(6)
+  notas                   String?
+  cedula                  String                    @unique @default("sin_cedula")
+  campanas_enviadas       campanas_enviadas[]
+  conversaciones_whatsapp conversaciones_whatsapp[]
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -31,27 +32,28 @@ model plantillas {
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model campanas_enviadas {
-  id                  String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  created_at          DateTime?       @default(now()) @db.Timestamptz(6)
-  cliente_id          String          @db.Uuid
-  plantilla_id        String?         @db.Uuid
+  id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at          DateTime?          @default(now()) @db.Timestamptz(6)
+  cliente_id          String             @db.Uuid
+  plantilla_id        String?            @db.Uuid
   nombre_cliente      String?
   telefono_cliente    String?
   nombre_plantilla    String?
   mensaje_enviado     String
-  estado              String?         @default("abierta_whatsapp")
-  canal               String?         @default("whatsapp_web")
+  estado              String?            @default("abierta_whatsapp")
+  canal               String?            @default("whatsapp_web")
   whatsapp_message_id String?
   estado_api          String?
   error_api           String?
-  fecha_enviado_api   DateTime?       @db.Timestamptz(6)
-  fecha_entregado     DateTime?       @db.Timestamptz(6)
-  fecha_leido         DateTime?       @db.Timestamptz(6)
-  fecha_fallido       DateTime?       @db.Timestamptz(6)
-  lote_id             String?         @db.Uuid
-  clientes            clientes        @relation(fields: [cliente_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  campanas_lotes      campanas_lotes? @relation(fields: [lote_id], references: [id], onUpdate: NoAction)
-  plantillas          plantillas?     @relation(fields: [plantilla_id], references: [id], onUpdate: NoAction)
+  fecha_enviado_api   DateTime?          @db.Timestamptz(6)
+  fecha_entregado     DateTime?          @db.Timestamptz(6)
+  fecha_leido         DateTime?          @db.Timestamptz(6)
+  fecha_fallido       DateTime?          @db.Timestamptz(6)
+  lote_id             String?            @db.Uuid
+  clientes            clientes           @relation(fields: [cliente_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  campanas_lotes      campanas_lotes?    @relation(fields: [lote_id], references: [id], onUpdate: NoAction)
+  plantillas          plantillas?        @relation(fields: [plantilla_id], references: [id], onUpdate: NoAction)
+  mensajes_whatsapp   mensajes_whatsapp?
 
   @@index([lote_id])
 }
@@ -68,4 +70,122 @@ model campanas_lotes {
   total_fallidas    Int                 @default(0)
   estado            String              @default("procesando")
   campanas_enviadas campanas_enviadas[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+/// This model contains an index with non-default null sort order and requires additional setup for migrations. Visit https://pris.ly/d/default-index-null-ordering for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model conversaciones_whatsapp {
+  id                            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at                    DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime            @default(now()) @db.Timestamptz(6)
+  numero_whatsapp_id            String              @db.Uuid
+  cliente_id                    String?             @db.Uuid
+  telefono_cliente              String
+  nombre_cliente                String?
+  ultimo_mensaje                String?
+  ultimo_tipo                   String?
+  ultima_direccion              String?
+  fecha_ultimo_mensaje          DateTime?           @db.Timestamptz(6)
+  fecha_ultimo_mensaje_entrante DateTime?           @db.Timestamptz(6)
+  fecha_ultimo_mensaje_saliente DateTime?           @db.Timestamptz(6)
+  ventana_atencion_hasta        DateTime?           @db.Timestamptz(6)
+  no_leidos                     Int                 @default(0)
+  fecha_leida_internamente      DateTime?           @db.Timestamptz(6)
+  estado                        String              @default("abierta")
+  asignado_a                    String?             @db.Uuid
+  cerrada_at                    DateTime?           @db.Timestamptz(6)
+  metadata                      Json                @default("{}")
+  clientes                      clientes?           @relation(fields: [cliente_id], references: [id], onUpdate: NoAction, map: "conversaciones_whatsapp_cliente_fk")
+  numeros_whatsapp              numeros_whatsapp    @relation(fields: [numero_whatsapp_id], references: [id], onUpdate: NoAction, map: "conversaciones_whatsapp_numero_fk")
+  mensajes_whatsapp             mensajes_whatsapp[]
+
+  @@unique([numero_whatsapp_id, telefono_cliente], map: "conversaciones_whatsapp_numero_telefono_unico")
+  @@index([fecha_ultimo_mensaje(sort: Desc)], map: "conversaciones_whatsapp_actividad_idx")
+  @@index([cliente_id], map: "conversaciones_whatsapp_cliente_idx")
+  @@index([estado])
+  @@index([telefono_cliente], map: "conversaciones_whatsapp_telefono_idx")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model mensajes_whatsapp {
+  id                       String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at               DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime                @default(now()) @db.Timestamptz(6)
+  conversacion_id          String                  @db.Uuid
+  campana_enviada_id       String?                 @unique(map: "mensajes_whatsapp_campana_unica") @db.Uuid
+  whatsapp_message_id      String?                 @unique(map: "mensajes_whatsapp_wamid_unico")
+  idempotency_key          String?                 @unique(map: "mensajes_whatsapp_idempotency_unico")
+  context_message_id       String?
+  direccion                String
+  tipo                     String                  @default("text")
+  origen                   String                  @default("cliente")
+  contenido                String?
+  caption                  String?
+  estado_api               String?
+  error_api                Json?
+  fecha_mensaje            DateTime                @default(now()) @db.Timestamptz(6)
+  timestamp_meta           DateTime?               @db.Timestamptz(6)
+  fecha_aceptado           DateTime?               @db.Timestamptz(6)
+  fecha_enviado            DateTime?               @db.Timestamptz(6)
+  fecha_entregado          DateTime?               @db.Timestamptz(6)
+  fecha_leido              DateTime?               @db.Timestamptz(6)
+  fecha_fallido            DateTime?               @db.Timestamptz(6)
+  fecha_leido_internamente DateTime?               @db.Timestamptz(6)
+  media_id                 String?
+  mime_type                String?
+  nombre_archivo           String?
+  tamano_archivo           BigInt?
+  template_name            String?
+  template_language        String?
+  enviado_por_usuario_id   String?                 @db.Uuid
+  metadata                 Json                    @default("{}")
+  campanas_enviadas        campanas_enviadas?      @relation(fields: [campana_enviada_id], references: [id], onUpdate: NoAction, map: "mensajes_whatsapp_campana_fk")
+  conversaciones_whatsapp  conversaciones_whatsapp @relation(fields: [conversacion_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "mensajes_whatsapp_conversacion_fk")
+
+  @@index([campana_enviada_id], map: "mensajes_whatsapp_campana_idx")
+  @@index([context_message_id], map: "mensajes_whatsapp_contexto_idx")
+  @@index([conversacion_id, fecha_mensaje(sort: Desc)], map: "mensajes_whatsapp_conversacion_fecha_idx")
+  @@index([direccion, estado_api], map: "mensajes_whatsapp_estado_idx")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model numeros_whatsapp {
+  id                      String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at              DateTime                  @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime                  @default(now()) @db.Timestamptz(6)
+  phone_number_id         String                    @unique(map: "numeros_whatsapp_phone_number_id_unico")
+  waba_id                 String?
+  nombre                  String?
+  telefono_mostrado       String?
+  activo                  Boolean                   @default(true)
+  es_predeterminado       Boolean                   @default(false)
+  metadata                Json                      @default("{}")
+  conversaciones_whatsapp conversaciones_whatsapp[]
+
+  @@index([activo])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model suscripciones_push {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @default(now()) @db.Timestamptz(6)
+  usuario_id         String    @db.Uuid
+  endpoint           String    @unique(map: "suscripciones_push_endpoint_unico")
+  p256dh             String
+  auth               String
+  expiration_time    BigInt?
+  user_agent         String?
+  nombre_dispositivo String?
+  activa             Boolean   @default(true)
+  ultimo_uso         DateTime? @db.Timestamptz(6)
+  cantidad_fallos    Int       @default(0)
+  ultimo_error       String?
+
+  @@index([usuario_id], map: "suscripciones_push_usuario_idx")
 }

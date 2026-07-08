@@ -16,6 +16,9 @@ type SearchParams = Promise<{
   estado?: string;
   estado_api?: string;
   canal?: string;
+  origen?: string;
+  fecha_desde?: string;
+  fecha_hasta?: string;
   pagina_lotes?: string;
   pagina_envios?: string;
 }>;
@@ -76,6 +79,29 @@ function obtenerPagina(valor: string | undefined): number {
   }
 
   return pagina;
+}
+
+function normalizarFecha(valor: string | undefined): string {
+  const fecha = String(valor || "").trim();
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+    return "";
+  }
+
+  const [anio, mes, dia] = fecha
+    .split("-")
+    .map(Number);
+
+  const fechaValidada = new Date(
+    Date.UTC(anio, mes - 1, dia)
+  );
+
+  const esValida =
+    fechaValidada.getUTCFullYear() === anio &&
+    fechaValidada.getUTCMonth() === mes - 1 &&
+    fechaValidada.getUTCDate() === dia;
+
+  return esValida ? fecha : "";
 }
 
 function obtenerPaginasVisibles(
@@ -289,6 +315,18 @@ export default async function CampanasPage({
   const estado = String(params.estado || "todos").trim();
   const estadoApi = String(params.estado_api || "todos").trim();
   const canal = String(params.canal || "todos").trim();
+  const fechaDesde = normalizarFecha(params.fecha_desde);
+  const fechaHasta = normalizarFecha(params.fecha_hasta);
+
+  const origenRecibido = String(
+    params.origen || "todos"
+  ).trim();
+
+  const origen = ["todos", "lote", "individual"].includes(
+    origenRecibido
+  )
+    ? origenRecibido
+    : "todos";
 
   const paginaLotesSolicitada = obtenerPagina(params.pagina_lotes);
   const paginaEnviosSolicitada = obtenerPagina(params.pagina_envios);
@@ -549,6 +587,14 @@ export default async function CampanasPage({
     condicionesEnvios.push(
       Prisma.sql`lote_id = ${loteId}::uuid`
     );
+  } else if (origen === "lote") {
+    condicionesEnvios.push(
+      Prisma.sql`lote_id IS NOT NULL`
+    );
+  } else if (origen === "individual") {
+    condicionesEnvios.push(
+      Prisma.sql`lote_id IS NULL`
+    );
   }
 
   if (estado !== "todos") {
@@ -565,35 +611,74 @@ export default async function CampanasPage({
     condicionesEnvios.push(Prisma.sql`canal = ${canal}`);
   }
 
+  if (fechaDesde) {
+    condicionesEnvios.push(
+      Prisma.sql`
+        created_at >= (
+          ${fechaDesde}::date::timestamp
+          AT TIME ZONE 'America/Bogota'
+        )
+      `
+    );
+  }
+
+  if (fechaHasta) {
+    condicionesEnvios.push(
+      Prisma.sql`
+        created_at < (
+          (${fechaHasta}::date + INTERVAL '1 day')
+          AT TIME ZONE 'America/Bogota'
+        )
+      `
+    );
+  }
+
   if (search) {
-    const terminos = search
-      .split(/\s+/)
-      .map((termino) => termino.trim())
+    const busquedaNormalizada = search.replace(/\s+/g, " ").trim();
+    const patronCompleto = `%${busquedaNormalizada}%`;
+
+    const terminosNombre = busquedaNormalizada
+      .split(" ")
       .filter(Boolean);
 
-    const condicionesBusquedaEnvio = terminos.map((termino) => {
-      const patron = `%${termino}%`;
+    const condicionesNombreCompleto = terminosNombre.map(
+      (termino) => {
+        const patronTermino = `%${termino}%`;
 
-      return Prisma.sql`(
-        COALESCE(nombre_cliente, '') ILIKE ${patron}
-        OR COALESCE(telefono_cliente, '') ILIKE ${patron}
-        OR COALESCE(nombre_plantilla, '') ILIKE ${patron}
-        OR COALESCE(mensaje_enviado, '') ILIKE ${patron}
-        OR COALESCE(estado, '') ILIKE ${patron}
-        OR COALESCE(estado_api, '') ILIKE ${patron}
-        OR COALESCE(whatsapp_message_id, '') ILIKE ${patron}
-        OR COALESCE(lote_id::text, '') ILIKE ${patron}
-      )`;
-    });
+        return Prisma.sql`
+          COALESCE(nombre_cliente, '') ILIKE ${patronTermino}
+        `;
+      }
+    );
 
-    if (condicionesBusquedaEnvio.length > 0) {
-      condicionesEnvios.push(
-        Prisma.sql`(${Prisma.join(
-          condicionesBusquedaEnvio,
-          " AND "
-        )})`
-      );
-    }
+    const coincidenciaNombrePorTerminos =
+      condicionesNombreCompleto.length > 0
+        ? Prisma.sql`(
+            ${Prisma.join(
+              condicionesNombreCompleto,
+              " AND "
+            )}
+          )`
+        : Prisma.sql`FALSE`;
+
+    condicionesEnvios.push(
+      Prisma.sql`(
+        REGEXP_REPLACE(
+          TRIM(COALESCE(nombre_cliente, '')),
+          '\s+',
+          ' ',
+          'g'
+        ) ILIKE ${patronCompleto}
+        OR ${coincidenciaNombrePorTerminos}
+        OR COALESCE(telefono_cliente, '') ILIKE ${patronCompleto}
+        OR COALESCE(nombre_plantilla, '') ILIKE ${patronCompleto}
+        OR COALESCE(mensaje_enviado, '') ILIKE ${patronCompleto}
+        OR COALESCE(estado, '') ILIKE ${patronCompleto}
+        OR COALESCE(estado_api, '') ILIKE ${patronCompleto}
+        OR COALESCE(whatsapp_message_id, '') ILIKE ${patronCompleto}
+        OR COALESCE(lote_id::text, '') ILIKE ${patronCompleto}
+      )`
+    );
   }
 
   const whereEnvios = Prisma.sql`
@@ -733,6 +818,18 @@ export default async function CampanasPage({
       query.set("canal", canal);
     }
 
+    if (origen !== "todos") {
+      query.set("origen", origen);
+    }
+
+    if (fechaDesde) {
+      query.set("fecha_desde", fechaDesde);
+    }
+
+    if (fechaHasta) {
+      query.set("fecha_hasta", fechaHasta);
+    }
+
     if (paginaLotes > 1) {
       query.set("pagina_lotes", String(paginaLotes));
     }
@@ -773,6 +870,9 @@ export default async function CampanasPage({
         estado: null,
         estado_api: null,
         canal: null,
+        origen: null,
+        fecha_desde: null,
+        fecha_hasta: null,
         pagina_envios: "1",
       }) + "#detalle"
     );
@@ -1097,7 +1197,11 @@ export default async function CampanasPage({
               <p className="text-sm text-gray-600">
                 {loteSeleccionado
                   ? `Mostrando los envíos relacionados con el lote ${loteSeleccionado.id}.`
-                  : "Mostrando los envíos individuales de todas las campañas."}
+                  : origen === "lote"
+                    ? "Mostrando solo los envíos por lote."
+                    : origen === "individual"
+                      ? "Mostrando solo los envíos individuales."
+                      : "Mostrando todos los envíos individuales y por lote."}
               </p>
             </div>
 
@@ -1274,7 +1378,7 @@ export default async function CampanasPage({
               />
             )}
 
-            <div className="grid gap-3 xl:grid-cols-[1fr_190px_190px_190px_auto]">
+            <div className="grid gap-3 xl:grid-cols-[1fr_180px_190px_190px_190px_auto]">
               <input
                 type="text"
                 name="search"
@@ -1282,6 +1386,28 @@ export default async function CampanasPage({
                 placeholder="Buscar cliente, teléfono, plantilla o ID..."
                 className="rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-300"
               />
+
+              <select
+                name="origen"
+                defaultValue={origen}
+                disabled={Boolean(loteId)}
+                className="rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-300 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                title={
+                  loteId
+                    ? "Quita el lote seleccionado para filtrar por origen."
+                    : undefined
+                }
+              >
+                <option value="todos">
+                  Todos los envíos
+                </option>
+                <option value="lote">
+                  Solo por lote
+                </option>
+                <option value="individual">
+                  Solo individuales
+                </option>
+              </select>
 
               <select
                 name="estado"
@@ -1354,6 +1480,32 @@ export default async function CampanasPage({
               </button>
             </div>
 
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:max-w-[420px]">
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-gray-600">
+                  Desde
+                </span>
+                <input
+                  type="date"
+                  name="fecha_desde"
+                  defaultValue={fechaDesde}
+                  className="rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-300"
+                />
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-gray-600">
+                  Hasta
+                </span>
+                <input
+                  type="date"
+                  name="fecha_hasta"
+                  defaultValue={fechaHasta}
+                  className="rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-300"
+                />
+              </label>
+            </div>
+
             <div className="mt-3">
               <Link
                 href={
@@ -1362,6 +1514,9 @@ export default async function CampanasPage({
                     estado: null,
                     estado_api: null,
                     canal: null,
+                    origen: null,
+                    fecha_desde: null,
+                    fecha_hasta: null,
                     pagina_envios: "1",
                   }) + "#detalle"
                 }

@@ -7,6 +7,7 @@ import TablaClientes from "@/app/components/TablaClientes";
 import Link from "next/link";
 import BotonCerrarSesion from "@/components/BotonCerrarSesion";
 import { exigirUsuarioPagina } from "@/lib/auth/exigirUsuarioPagina";
+import ActivarNotificaciones from "@/components/ActivarNotificaciones";
 
 export const dynamic = "force-dynamic";
 
@@ -320,6 +321,15 @@ export default async function Home({
 
     return queryString ? `/?${queryString}` : "/";
   }
+  const resumenNoLeidosWhatsApp =
+    await prisma.conversaciones_whatsapp.aggregate({
+      _sum: {
+        no_leidos: true,
+      },
+    });
+
+  const totalNoLeidosWhatsApp =
+    resumenNoLeidosWhatsApp._sum.no_leidos ?? 0;
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-6 md:px-8">
@@ -348,8 +358,22 @@ export default async function Home({
           >
             Ver campañas enviadas
           </Link>
+          <Link
+            href="/bandeja"
+            className="inline-flex h-10 items-center justify-center rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-700"
+          >
+            Bandeja
+            {totalNoLeidosWhatsApp > 0 && (
+              <span className="ml-2 rounded-full bg-white px-2 py-0.5 text-xs font-bold text-emerald-700">
+                {totalNoLeidosWhatsApp}
+              </span>
+            )}
+          </Link>
         </div>
 
+      </div>
+      <div className="mb-6">
+        <ActivarNotificaciones />
       </div>
 
       {params.error === "solo_numeros" && (
