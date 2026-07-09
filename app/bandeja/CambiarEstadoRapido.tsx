@@ -17,38 +17,53 @@ export default function CambiarEstadoRapido({
   const [error, setError] = useState("");
 
   async function cambiarEstado(estado: EstadoConversacion) {
-    setCargando(estado);
-    setError("");
+  const requiereConfirmacion =
+    estado === "cerrada" || estado === "archivada";
 
-    try {
-      const respuesta = await fetch("/api/whatsapp/conversacion/estado", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          conversacion_id: conversacionId,
-          estado,
-        }),
-      });
+  if (requiereConfirmacion) {
+    const accion = estado === "cerrada" ? "cerrar" : "archivar";
 
-      const datos = await respuesta.json().catch(() => null);
+    const confirmado = window.confirm(
+      `¿Seguro que deseas ${accion} esta conversación?`
+    );
 
-      if (!respuesta.ok || !datos?.ok) {
-        throw new Error(datos?.error || "No se pudo cambiar el estado.");
-      }
-
-      window.location.reload();
-    } catch (error) {
-      setError(
-        error instanceof Error
-          ? error.message
-          : "No se pudo cambiar el estado."
-      );
-    } finally {
-      setCargando(null);
+    if (!confirmado) {
+      return;
     }
   }
+
+  setCargando(estado);
+  setError("");
+
+  try {
+    const respuesta = await fetch("/api/whatsapp/conversacion/estado", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        conversacion_id: conversacionId,
+        estado,
+      }),
+    });
+
+    const datos = await respuesta.json().catch(() => null);
+
+    if (!respuesta.ok || !datos?.ok) {
+      throw new Error(datos?.error || "No se pudo cambiar el estado.");
+    }
+
+    window.location.reload();
+  } catch (error) {
+    setError(
+      error instanceof Error
+        ? error.message
+        : "No se pudo cambiar el estado."
+    );
+  } finally {
+    setCargando(null);
+  }
+}
 
   return (
     <div className="flex flex-col gap-2">

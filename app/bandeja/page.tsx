@@ -11,6 +11,7 @@ type SearchParams = Promise<{
   no_leidos?: string;
   estado?: string;
   pagina?: string;
+  tipo_contacto?: string;
 }>;
 
 const estadosFiltro = ["abierta", "cerrada", "archivada"] as const;
@@ -21,6 +22,19 @@ function esEstadoFiltro(valor: string | undefined): valor is EstadoFiltro {
   return (
     typeof valor === "string" &&
     estadosFiltro.includes(valor as EstadoFiltro)
+  );
+}
+
+const tiposContactoFiltro = ["registrado", "desconocido"] as const;
+
+type TipoContactoFiltro = (typeof tiposContactoFiltro)[number];
+
+function esTipoContactoFiltro(
+  valor: string | undefined,
+): valor is TipoContactoFiltro {
+  return (
+    typeof valor === "string" &&
+    tiposContactoFiltro.includes(valor as TipoContactoFiltro)
   );
 }
 
@@ -121,6 +135,11 @@ export default async function BandejaPage({
   const estadoFiltro = esEstadoFiltro(parametros.estado)
     ? parametros.estado
     : "";
+  const tipoContactoFiltro = esTipoContactoFiltro(
+    parametros.tipo_contacto,
+  )
+    ? parametros.tipo_contacto
+    : "";
   const paginaParametro = Number(parametros.pagina ?? "1");
 
   const paginaActual =
@@ -165,12 +184,24 @@ export default async function BandejaPage({
     where.estado = estadoFiltro;
   }
 
+  if (tipoContactoFiltro === "registrado") {
+    where.cliente_id = {
+      not: null,
+    };
+  }
+
+  if (tipoContactoFiltro === "desconocido") {
+    where.cliente_id = null;
+  }
+
   const [
     conversaciones,
     totalConversaciones,
     totalConversacionesFiltradas,
     resumenMensajesNoLeidos,
     conteosPorEstado,
+    totalClientesRegistrados,
+    totalContactosDesconocidos,
   ] = await Promise.all([
     prisma.conversaciones_whatsapp.findMany({
       where,
@@ -214,6 +245,19 @@ export default async function BandejaPage({
       by: ["estado"],
       _count: {
         _all: true,
+      },
+    }),
+    prisma.conversaciones_whatsapp.count({
+      where: {
+        cliente_id: {
+          not: null,
+        },
+      },
+    }),
+
+    prisma.conversaciones_whatsapp.count({
+      where: {
+        cliente_id: null,
       },
     }),
   ]);
@@ -260,6 +304,10 @@ export default async function BandejaPage({
 
     if (estadoFiltro) {
       query.set("estado", estadoFiltro);
+    }
+
+    if (tipoContactoFiltro) {
+      query.set("tipo_contacto", tipoContactoFiltro);
     }
 
     if (pagina > 1) {
@@ -352,6 +400,32 @@ export default async function BandejaPage({
           </Link>
         </section>
 
+        <section className="mb-6 grid gap-4 sm:grid-cols-2">
+          <Link
+            href="/bandeja?tipo_contacto=registrado"
+            className="rounded-xl border border-violet-200 bg-white p-4 shadow-sm hover:bg-violet-50"
+          >
+            <p className="text-sm font-medium text-slate-500">
+              Clientes registrados
+            </p>
+            <p className="mt-2 text-2xl font-bold text-violet-700">
+              {totalClientesRegistrados}
+            </p>
+          </Link>
+
+          <Link
+            href="/bandeja?tipo_contacto=desconocido"
+            className="rounded-xl border border-amber-200 bg-white p-4 shadow-sm hover:bg-amber-50"
+          >
+            <p className="text-sm font-medium text-slate-500">
+              Contactos desconocidos
+            </p>
+            <p className="mt-2 text-2xl font-bold text-amber-700">
+              {totalContactosDesconocidos}
+            </p>
+          </Link>
+        </section>
+
         <section className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <form
             method="GET"
@@ -395,6 +469,26 @@ export default async function BandejaPage({
               </select>
             </div>
 
+            <div className="w-full lg:w-56">
+              <label
+                htmlFor="tipo_contacto"
+                className="mb-1 block text-sm font-semibold text-slate-700"
+              >
+                Contacto
+              </label>
+
+              <select
+                id="tipo_contacto"
+                name="tipo_contacto"
+                defaultValue={tipoContactoFiltro}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+              >
+                <option value="">Todos</option>
+                <option value="registrado">Clientes registrados</option>
+                <option value="desconocido">Contactos desconocidos</option>
+              </select>
+            </div>
+
             <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700">
               <input
                 type="checkbox"
@@ -415,7 +509,7 @@ export default async function BandejaPage({
                 Buscar
               </button>
 
-              {(buscar || soloNoLeidos || estadoFiltro) && (
+              {(buscar || soloNoLeidos || estadoFiltro || tipoContactoFiltro) && (
                 <Link
                   href="/bandeja"
                   className="flex-1 rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-center text-sm font-semibold text-slate-700 hover:bg-slate-50 lg:flex-none"
