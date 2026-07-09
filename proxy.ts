@@ -8,9 +8,10 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Ejecutar el proxy en todas las rutas excepto
-     * archivos estáticos e imágenes.
+     * Ejecutar el proxy en rutas privadas de la app,
+     * excluyendo archivos públicos, PWA, páginas legales
+     * y el webhook público de WhatsApp.
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|icons/|api/whatsapp/webhook|eliminacion-de-datos|terminos-y-condiciones|politica-de-privacidad|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
