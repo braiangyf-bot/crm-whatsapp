@@ -181,10 +181,10 @@ async function convertirAudioAOggOpus(archivo: File): Promise<{
 
     return {
       blob: new Blob([bufferSalida], {
-        type: "audio/ogg; codecs=opus",
+        type: "audio/ogg",
       }),
       nombreArchivo: `voice-note-${Date.now()}.ogg`,
-      mimeType: "audio/ogg; codecs=opus",
+      mimeType: "audio/ogg",
     };
   } finally {
     await Promise.allSettled([unlink(entrada), unlink(salida)]);
