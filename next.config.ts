@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  outputFileTracingIncludes: {
+    "/api/whatsapp/responder/media": [
+      "./node_modules/ffmpeg-static/**/*",
+    ],
+  },
 };
 
 export default nextConfig;
