@@ -895,6 +895,23 @@ export async function POST(request: Request) {
           : [];
 
         for (const statusInfo of statuses) {
+          if (statusInfo.status === "failed") {
+            const statusConDetalle = statusInfo as EstadoWebhook & {
+              errors?: unknown;
+              conversation?: unknown;
+              pricing?: unknown;
+            };
+
+            console.error("WhatsApp marcó mensaje como fallido:", {
+              messageId: statusConDetalle.id,
+              recipientId: statusConDetalle.recipient_id,
+              timestamp: statusConDetalle.timestamp,
+              errors: statusConDetalle.errors,
+              conversation: statusConDetalle.conversation,
+              pricing: statusConDetalle.pricing,
+            });
+          }
+
           await procesarEstado(statusInfo);
         }
 
