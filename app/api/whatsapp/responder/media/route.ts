@@ -194,11 +194,11 @@ async function convertirAudioAOggOpus(archivo: File): Promise<{
     }
 
     return {
-      blob: new File([bufferSalida], nombreConvertido, {
-        type: "audio/ogg; codecs=opus",
+      blob: new File([new Uint8Array(bufferSalida)], nombreConvertido, {
+        type: "audio/ogg",
       }),
       nombreArchivo: nombreConvertido,
-      mimeType: "audio/ogg; codecs=opus",
+      mimeType: "audio/ogg",
     };
   } finally {
     await Promise.allSettled([unlink(entrada), unlink(salida)]);
@@ -354,6 +354,7 @@ export async function POST(request: NextRequest) {
     console.log("Intentando subir media a Meta:", {
       nombreArchivo,
       tipoArchivo: mimeType,
+      mimeSubido: archivoParaSubir.type,
       tamanoOriginal: archivo.size,
       tamanoSubido: archivoParaSubir.size,
       phoneNumberId,
