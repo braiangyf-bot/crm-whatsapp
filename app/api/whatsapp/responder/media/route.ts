@@ -178,13 +178,27 @@ async function convertirAudioAOggOpus(archivo: File): Promise<{
     ]);
 
     const bufferSalida = await readFile(salida);
+    const firmaArchivo = bufferSalida.subarray(0, 4).toString("utf8");
+    const nombreConvertido = `voice-note-${Date.now()}.ogg`;
+
+    console.log("Audio convertido por FFmpeg:", {
+      bytes: bufferSalida.length,
+      firma: firmaArchivo,
+      primerosBytesHex: bufferSalida.subarray(0, 16).toString("hex"),
+    });
+
+    if (firmaArchivo !== "OggS") {
+      throw new Error(
+        `FFmpeg no generó un OGG válido. Firma detectada: ${firmaArchivo || "vacía"}`
+      );
+    }
 
     return {
-      blob: new Blob([bufferSalida], {
-        type: "audio/ogg",
+      blob: new File([bufferSalida], nombreConvertido, {
+        type: "audio/ogg; codecs=opus",
       }),
-      nombreArchivo: `voice-note-${Date.now()}.ogg`,
-      mimeType: "audio/ogg",
+      nombreArchivo: nombreConvertido,
+      mimeType: "audio/ogg; codecs=opus",
     };
   } finally {
     await Promise.allSettled([unlink(entrada), unlink(salida)]);
@@ -341,6 +355,7 @@ export async function POST(request: NextRequest) {
       nombreArchivo,
       tipoArchivo: mimeType,
       tamanoOriginal: archivo.size,
+      tamanoSubido: archivoParaSubir.size,
       phoneNumberId,
       apiVersion,
       enviarComoNotaVoz,
