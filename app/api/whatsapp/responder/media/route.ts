@@ -8,6 +8,7 @@ import { tmpdir } from "os";
 import path from "path";
 import { readFile, unlink, writeFile } from "fs/promises";
 import { existsSync } from "fs";
+import sharp from "sharp";
 
 export const runtime = "nodejs";
 
@@ -210,6 +211,37 @@ async function convertirAudioAOggOpus(archivo: File): Promise<{
     await Promise.allSettled([unlink(entrada), unlink(salida)]);
   }
 }
+async function normalizarImagenAntesDeSubir(archivo: File): Promise<{
+  blob: Blob;
+  nombreArchivo: string;
+  mimeType: string;
+}> {
+  const bufferEntrada = Buffer.from(await archivo.arrayBuffer());
+
+  const bufferSalida = await sharp(bufferEntrada)
+    .rotate()
+    .jpeg({
+      quality: 90,
+      mozjpeg: true,
+    })
+    .toBuffer();
+
+  const nombreBase =
+    archivo.name
+      ?.replace(/\.[^.]+$/, "")
+      .replace(/[^a-zA-Z0-9-_]/g, "-")
+      .slice(0, 80) || "imagen";
+
+  const nombreArchivo = `${nombreBase}-${Date.now()}.jpg`;
+
+  return {
+    blob: new Blob([new Uint8Array(bufferSalida)], {
+      type: "image/jpeg",
+    }),
+    nombreArchivo,
+    mimeType: "image/jpeg",
+  };
+}
 
 export async function POST(request: NextRequest) {
   console.log("API media recibió petición");
@@ -333,6 +365,23 @@ export async function POST(request: NextRequest) {
     let mimeType = archivo.type || "application/octet-stream";
     let archivoParaSubir: Blob = archivo;
     let tipo = resolverTipoMedia(mimeType);
+    if (tipo === "image") {
+      console.log("Normalizando orientación de imagen antes de subir...");
+
+      const imagenNormalizada = await normalizarImagenAntesDeSubir(archivo);
+
+      archivoParaSubir = imagenNormalizada.blob;
+      nombreArchivo = imagenNormalizada.nombreArchivo;
+      mimeType = imagenNormalizada.mimeType;
+      tipo = "image";
+
+      console.log("Imagen normalizada:", {
+        nombreArchivo,
+        mimeType,
+        tamanoOriginal: archivo.size,
+        tamanoNormalizado: archivoParaSubir.size,
+      });
+    }
 
     const pareceGrabacionDelNavegador = /^audio-\d+\.(webm|m4a|ogg|mp3)$/i.test(
       nombreArchivo,
