@@ -181,16 +181,22 @@ async function convertirAudioAOggOpus(archivo: File): Promise<{
     const firmaArchivo = bufferSalida.subarray(0, 4).toString("utf8");
     const nombreConvertido = `voice-note-${Date.now()}.ogg`;
 
+    const contieneOpusHead = bufferSalida.includes(Buffer.from("OpusHead"));
+
     console.log("Audio convertido por FFmpeg:", {
       bytes: bufferSalida.length,
       firma: firmaArchivo,
-      primerosBytesHex: bufferSalida.subarray(0, 16).toString("hex"),
+      contieneOpusHead,
+      primerosBytesHex: bufferSalida.subarray(0, 32).toString("hex"),
     });
 
     if (firmaArchivo !== "OggS") {
       throw new Error(
         `FFmpeg no generó un OGG válido. Firma detectada: ${firmaArchivo || "vacía"}`
       );
+    }
+    if (!contieneOpusHead) {
+      throw new Error("FFmpeg generó OGG, pero no contiene cabecera OpusHead.");
     }
 
     return {
@@ -204,7 +210,6 @@ async function convertirAudioAOggOpus(archivo: File): Promise<{
     await Promise.allSettled([unlink(entrada), unlink(salida)]);
   }
 }
-
 
 export async function POST(request: NextRequest) {
   console.log("API media recibió petición");
