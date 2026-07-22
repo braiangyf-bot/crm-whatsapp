@@ -7,6 +7,8 @@ import CambiarEstadoConversacion from "./CambiarEstadoConversacion";
 import ContenidoMensajeWhatsApp from "@/components/ContenidoMensajeWhatsApp";
 import AutoRefrescarChat from "./AutoRefrescarChat";
 import ClienteNotas from "./ClienteNotas";
+import type { Prisma } from "@prisma/client";
+import CambiarEtiquetaConversacion from "../CambiarEtiquetaConversacion";
 
 
 export const dynamic = "force-dynamic";
@@ -108,6 +110,67 @@ function mostrarEstado(
 
     return estados[estadoApi ?? ""] ?? estadoApi ?? "Pendiente";
 }
+const etiquetasComerciales = [
+    "pendiente",
+    "contactado",
+    "interesado",
+    "cliente",
+    "no_responde",
+] as const;
+
+type EtiquetaComercial = (typeof etiquetasComerciales)[number];
+
+function esEtiquetaComercial(
+    valor: string | undefined,
+): valor is EtiquetaComercial {
+    return (
+        typeof valor === "string" &&
+        etiquetasComerciales.includes(valor as EtiquetaComercial)
+    );
+}
+
+function obtenerEtiquetaComercial(
+    metadata: Prisma.JsonValue,
+): EtiquetaComercial | "" {
+    if (
+        metadata &&
+        typeof metadata === "object" &&
+        !Array.isArray(metadata)
+    ) {
+        const valor = (metadata as Record<string, unknown>)
+            .etiqueta_comercial;
+
+        if (typeof valor === "string" && esEtiquetaComercial(valor)) {
+            return valor;
+        }
+    }
+
+    return "";
+}
+
+function nombreEtiquetaComercial(etiqueta: EtiquetaComercial | ""): string {
+    const nombres: Record<EtiquetaComercial, string> = {
+        pendiente: "Pendiente",
+        contactado: "Contactado",
+        interesado: "Interesado",
+        cliente: "Cliente",
+        no_responde: "No responde",
+    };
+
+    return etiqueta ? nombres[etiqueta] : "Sin etiqueta";
+}
+
+function clasesEtiquetaComercial(etiqueta: EtiquetaComercial | ""): string {
+    const clases: Record<EtiquetaComercial, string> = {
+        pendiente: "bg-yellow-100 text-yellow-800",
+        contactado: "bg-sky-100 text-sky-800",
+        interesado: "bg-emerald-100 text-emerald-800",
+        cliente: "bg-blue-100 text-blue-800",
+        no_responde: "bg-red-100 text-red-800",
+    };
+
+    return etiqueta ? clases[etiqueta] : "bg-slate-100 text-slate-600";
+}
 
 export default async function ConversacionPage({
     params,
@@ -157,6 +220,7 @@ export default async function ConversacionPage({
                 no_leidos: true,
                 fecha_ultimo_mensaje: true,
                 ventana_atencion_hasta: true,
+                metadata: true,
 
                 clientes: {
                     select: {
@@ -203,6 +267,10 @@ export default async function ConversacionPage({
         conversacion.clientes?.nombre?.trim() ||
         "Contacto sin nombre";
 
+    const etiquetaComercial = obtenerEtiquetaComercial(
+        conversacion.metadata,
+    );
+
     return (
         <main className="min-h-screen bg-slate-100 px-4 py-6">
             <AutoRefrescarChat intervaloMs={8000} />
@@ -235,6 +303,16 @@ export default async function ConversacionPage({
                                 {conversacion.estado}
                             </span>
 
+                            {etiquetaComercial ? (
+                                <span
+                                    className={`rounded-full px-3 py-1 text-xs font-semibold ${clasesEtiquetaComercial(
+                                        etiquetaComercial,
+                                    )}`}
+                                >
+                                    {nombreEtiquetaComercial(etiquetaComercial)}
+                                </span>
+                            ) : null}
+
                             <span
                                 className={`rounded-full px-3 py-1 text-xs font-semibold ${ventanaActiva
                                     ? "bg-blue-100 text-blue-800"
@@ -252,6 +330,25 @@ export default async function ConversacionPage({
                                 </span>
                             )}
                         </div>
+                    </div>
+                </section>
+
+                <section className="mt-5 rounded-xl bg-white p-5 shadow-sm">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <h2 className="text-lg font-bold text-slate-900">
+                                Seguimiento comercial
+                            </h2>
+
+                            <p className="mt-1 text-sm text-slate-500">
+                                Clasifica esta conversación para hacer seguimiento.
+                            </p>
+                        </div>
+
+                        <CambiarEtiquetaConversacion
+                            conversacionId={conversacion.id}
+                            etiquetaActual={etiquetaComercial}
+                        />
                     </div>
                 </section>
 

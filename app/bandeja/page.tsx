@@ -3,6 +3,7 @@ import { exigirUsuarioPagina } from "@/lib/auth/exigirUsuarioPagina";
 import { Prisma } from "@prisma/client";
 import Link from "next/link";
 import CambiarEstadoRapido from "./CambiarEstadoRapido";
+import CambiarEtiquetaConversacion from "./CambiarEtiquetaConversacion";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,7 @@ type SearchParams = Promise<{
   estado?: string;
   pagina?: string;
   tipo_contacto?: string;
+  etiqueta?: string;
 }>;
 
 const estadosFiltro = ["abierta", "cerrada", "archivada"] as const;
@@ -28,6 +30,65 @@ function esEstadoFiltro(valor: string | undefined): valor is EstadoFiltro {
 const tiposContactoFiltro = ["registrado", "desconocido"] as const;
 
 type TipoContactoFiltro = (typeof tiposContactoFiltro)[number];
+
+const etiquetasComerciales = [
+  "interesado",
+  "pendiente",
+  "cliente",
+  "no_responde",
+] as const;
+
+type EtiquetaComercial = (typeof etiquetasComerciales)[number];
+
+function esEtiquetaComercial(
+  valor: string | undefined,
+): valor is EtiquetaComercial {
+  return (
+    typeof valor === "string" &&
+    etiquetasComerciales.includes(valor as EtiquetaComercial)
+  );
+}
+
+function obtenerEtiquetaComercial(
+  metadata: Prisma.JsonValue,
+): EtiquetaComercial | "" {
+  if (
+    metadata &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata)
+  ) {
+    const valor = (metadata as Record<string, unknown>)
+      .etiqueta_comercial;
+
+    if (typeof valor === "string" && esEtiquetaComercial(valor)) {
+      return valor;
+    }
+  }
+
+  return "";
+}
+
+function nombreEtiquetaComercial(etiqueta: EtiquetaComercial | ""): string {
+  const nombres: Record<EtiquetaComercial, string> = {
+    interesado: "Interesado",
+    pendiente: "Pendiente",
+    cliente: "cliente",
+    no_responde: "No responde",
+  };
+
+  return etiqueta ? nombres[etiqueta] : "Sin etiqueta";
+}
+
+function clasesEtiquetaComercial(etiqueta: EtiquetaComercial | ""): string {
+  const clases: Record<EtiquetaComercial, string> = {
+    interesado: "bg-emerald-100 text-emerald-800",
+    pendiente: "bg-yellow-100 text-yellow-800",
+   cliente: "bg-blue-100 text-blue-800",
+    no_responde: "bg-red-100 text-red-800",
+  };
+
+  return etiqueta ? clases[etiqueta] : "bg-slate-100 text-slate-600";
+}
 
 function esTipoContactoFiltro(
   valor: string | undefined,
@@ -140,6 +201,9 @@ export default async function BandejaPage({
   )
     ? parametros.tipo_contacto
     : "";
+  const etiquetaFiltro = esEtiquetaComercial(parametros.etiqueta)
+    ? parametros.etiqueta
+    : "";
   const paginaParametro = Number(parametros.pagina ?? "1");
 
   const paginaActual =
@@ -194,6 +258,13 @@ export default async function BandejaPage({
     where.cliente_id = null;
   }
 
+  if (etiquetaFiltro) {
+    where.metadata = {
+      path: ["etiqueta_comercial"],
+      equals: etiquetaFiltro,
+    };
+  }
+
   const [
     conversaciones,
     totalConversaciones,
@@ -219,6 +290,7 @@ export default async function BandejaPage({
         ventana_atencion_hasta: true,
         no_leidos: true,
         estado: true,
+        metadata: true,
       },
       orderBy: [
         {
@@ -308,6 +380,10 @@ export default async function BandejaPage({
 
     if (tipoContactoFiltro) {
       query.set("tipo_contacto", tipoContactoFiltro);
+    }
+
+    if (etiquetaFiltro) {
+      query.set("etiqueta", etiquetaFiltro);
     }
 
     if (pagina > 1) {
@@ -489,6 +565,29 @@ export default async function BandejaPage({
               </select>
             </div>
 
+            <div className="w-full lg:w-56">
+              <label
+                htmlFor="etiqueta"
+                className="mb-1 block text-sm font-semibold text-slate-700"
+              >
+                Etiqueta
+              </label>
+
+              <select
+                id="etiqueta"
+                name="etiqueta"
+                defaultValue={etiquetaFiltro}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+              >
+                <option value="">Todas</option>
+                <option value="interesado">Interesado</option>
+                <option value="pendiente">Pendiente</option>
+                <option value="contactado">Contactado</option>
+                <option value="cliente">cliente</option>
+                <option value="no_responde">No responde</option>
+              </select>
+            </div>
+
             <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700">
               <input
                 type="checkbox"
@@ -509,14 +608,18 @@ export default async function BandejaPage({
                 Buscar
               </button>
 
-              {(buscar || soloNoLeidos || estadoFiltro || tipoContactoFiltro) && (
-                <Link
-                  href="/bandeja"
-                  className="flex-1 rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-center text-sm font-semibold text-slate-700 hover:bg-slate-50 lg:flex-none"
-                >
-                  Limpiar
-                </Link>
-              )}
+              {(buscar ||
+                soloNoLeidos ||
+                estadoFiltro ||
+                tipoContactoFiltro ||
+                etiquetaFiltro) && (
+                  <Link
+                    href="/bandeja"
+                    className="flex-1 rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-center text-sm font-semibold text-slate-700 hover:bg-slate-50 lg:flex-none"
+                  >
+                    Limpiar
+                  </Link>
+                )}
             </div>
           </form>
         </section>
@@ -560,6 +663,10 @@ export default async function BandejaPage({
               const mensaje = obtenerResumenMensaje(
                 conversacion.ultimo_mensaje,
                 conversacion.ultimo_tipo,
+              );
+
+              const etiquetaComercial = obtenerEtiquetaComercial(
+                conversacion.metadata,
               );
 
               return (
@@ -639,6 +746,16 @@ export default async function BandejaPage({
                               ? "Cliente registrado"
                               : "Contacto desconocido"}
                           </span>
+
+                          {etiquetaComercial ? (
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${clasesEtiquetaComercial(
+                                etiquetaComercial,
+                              )}`}
+                            >
+                              {nombreEtiquetaComercial(etiquetaComercial)}
+                            </span>
+                          ) : null}
                         </div>
 
                         <div className="flex items-center gap-2">
@@ -647,6 +764,11 @@ export default async function BandejaPage({
                               conversacion.fecha_ultimo_mensaje,
                             )}
                           </time>
+
+                          <CambiarEtiquetaConversacion
+                            conversacionId={conversacion.id}
+                            etiquetaActual={etiquetaComercial}
+                          />
 
                           <CambiarEstadoRapido
                             conversacionId={conversacion.id}
