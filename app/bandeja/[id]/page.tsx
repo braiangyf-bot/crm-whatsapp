@@ -6,6 +6,7 @@ import ResponderLibre from "./ResponderLibre";
 import CambiarEstadoConversacion from "./CambiarEstadoConversacion";
 import ContenidoMensajeWhatsApp from "@/components/ContenidoMensajeWhatsApp";
 import AutoRefrescarChat from "./AutoRefrescarChat";
+import ClienteNotas from "./ClienteNotas";
 
 
 export const dynamic = "force-dynamic";
@@ -159,6 +160,7 @@ export default async function ConversacionPage({
 
                 clientes: {
                     select: {
+                        id: true,
                         nombre: true,
                         cedula: true,
                         telefono: true,
@@ -296,16 +298,10 @@ export default async function ConversacionPage({
                                 </p>
                             </div>
 
-                            {conversacion.clientes.notas?.trim() && (
-                                <div className="sm:col-span-2">
-                                    <p className="text-xs font-semibold text-slate-500">
-                                        NOTAS
-                                    </p>
-                                    <p className="whitespace-pre-wrap text-sm text-slate-800">
-                                        {conversacion.clientes.notas}
-                                    </p>
-                                </div>
-                            )}
+                            <ClienteNotas
+                                clienteId={conversacion.clientes.id}
+                                notasIniciales={conversacion.clientes.notas}
+                            />
                         </div>
                     ) : (
                         <div className="mt-4 rounded-lg bg-amber-50 p-4 text-sm text-amber-900">
