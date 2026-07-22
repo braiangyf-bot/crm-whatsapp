@@ -353,16 +353,44 @@ export async function POST(request: NextRequest) {
       enviarComoNotaVoz = true;
     }
 
-    const uploadFormData = new FormData();
-    uploadFormData.append("messaging_product", "whatsapp");
-    uploadFormData.append("file", archivoParaSubir, nombreArchivo);
+    const bufferParaSubir = Buffer.from(await archivoParaSubir.arrayBuffer());
+    const boundary = `----crm-whatsapp-${randomUUID()}`;
+    const mimeParaSubir =
+      tipo === "audio" && enviarComoNotaVoz
+        ? "audio/ogg; codecs=opus"
+        : mimeType;
+
+    const cabeceraMultipart = Buffer.from(
+      [
+        `--${boundary}`,
+        `Content-Disposition: form-data; name="messaging_product"`,
+        "",
+        "whatsapp",
+        `--${boundary}`,
+        `Content-Disposition: form-data; name="file"; filename="${nombreArchivo.replace(/"/g, "")}"`,
+        `Content-Type: ${mimeParaSubir}`,
+        "",
+      ].join("\r\n") + "\r\n",
+    );
+
+    const cierreMultipart = Buffer.from(`\r\n--${boundary}--\r\n`);
+
+    const cuerpoMultipart = Buffer.concat([
+      cabeceraMultipart,
+      bufferParaSubir,
+      cierreMultipart,
+    ]);
 
     console.log("Intentando subir media a Meta:", {
       nombreArchivo,
       tipoArchivo: mimeType,
+      mimeParaSubir,
       mimeSubido: archivoParaSubir.type,
       tamanoOriginal: archivo.size,
       tamanoSubido: archivoParaSubir.size,
+      tamanoBufferSubido: bufferParaSubir.length,
+      firmaSubida: bufferParaSubir.subarray(0, 4).toString("utf8"),
+      contieneOpusHeadSubida: bufferParaSubir.includes(Buffer.from("OpusHead")),
       phoneNumberId,
       apiVersion,
       enviarComoNotaVoz,
@@ -374,11 +402,12 @@ export async function POST(request: NextRequest) {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "Content-Length": String(cuerpoMultipart.length),
         },
-        body: uploadFormData,
+        body: cuerpoMultipart,
       },
     );
-
     const uploadData = await uploadResponse.json().catch(() => null);
 
     if (!uploadResponse.ok || !uploadData?.id) {
