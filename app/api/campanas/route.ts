@@ -232,6 +232,7 @@ export async function POST(request: Request) {
         id: true,
         nombre: true,
         telefono: true,
+        estado: true,
       },
     });
 
@@ -242,6 +243,24 @@ export async function POST(request: Request) {
           error: "Cliente no encontrado.",
         },
         { status: 404 }
+      );
+    }
+
+    if (cliente.estado === "no_responde") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Este cliente está marcado como No responde. No se enviará campaña.",
+          codigo: "cliente_no_responde",
+          cliente: {
+            id: cliente.id,
+            nombre: cliente.nombre,
+            telefono: cliente.telefono,
+            estado: cliente.estado,
+          },
+        },
+        { status: 409 },
       );
     }
 

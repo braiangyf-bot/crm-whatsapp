@@ -311,6 +311,7 @@ export async function POST(request: Request) {
         id: true,
         nombre: true,
         telefono: true,
+        estado: true,
       },
     });
 
@@ -359,13 +360,35 @@ export async function POST(request: Request) {
         })
       );
 
+    const clientesBloqueadosPorNoResponde = clientes.filter(
+      (cliente) => cliente.estado === "no_responde",
+    );
+
+    const clientesElegiblesPorEstado = clientes.filter(
+      (cliente) => cliente.estado !== "no_responde",
+    );
+
+    for (const cliente of clientesBloqueadosPorNoResponde) {
+      totalFallidas += 1;
+
+      resultados.push({
+        cliente_id: cliente.id,
+        nombre: cliente.nombre,
+        telefono: cliente.telefono,
+        ok: false,
+        estado_api: "cliente_no_responde",
+        error:
+          "Cliente omitido porque está marcado como No responde.",
+      });
+    }
+
     const fechaLimiteDuplicados = calcularFechaLimiteDuplicados();
 
     const campanasRecientes =
       await prisma.campanas_enviadas.findMany({
         where: {
           cliente_id: {
-            in: clientes.map((cliente) => cliente.id),
+            in: clientesElegiblesPorEstado.map((cliente) => cliente.id),
           },
           nombre_plantilla: templateName,
           estado: {
@@ -398,11 +421,11 @@ export async function POST(request: Request) {
       campanasRecientes.map((campana) => campana.cliente_id),
     );
 
-    const clientesParaEnviar = clientes.filter(
+    const clientesParaEnviar = clientesElegiblesPorEstado.filter(
       (cliente) => !clientesConCampanaReciente.has(cliente.id),
     );
 
-    const clientesOmitidosPorDuplicado = clientes.filter(
+    const clientesOmitidosPorDuplicado = clientesElegiblesPorEstado.filter(
       (cliente) => clientesConCampanaReciente.has(cliente.id),
     );
 
