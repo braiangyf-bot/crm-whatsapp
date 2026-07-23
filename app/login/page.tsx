@@ -30,7 +30,7 @@ export default async function LoginPage({
           </h1>
 
           <p className="mt-2 text-sm text-gray-600">
-            Ingresa para acceder al CRM de WhatsApp.
+            Ingresa para acceder al CRM comercial privado.
           </p>
         </div>
 
@@ -91,9 +91,17 @@ export default async function LoginPage({
           </button>
         </form>
 
-        <p className="mt-6 text-center text-xs text-gray-500">
-          Acceso exclusivo para usuarios autorizados.
-        </p>
+        <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+          <p className="font-semibold text-slate-700">
+            Aplicación privada
+          </p>
+
+          <p className="mt-1">
+            Esta es una herramienta privada de gestión comercial. No es un sitio
+            oficial de WhatsApp, Meta ni Facebook. El acceso está permitido solo
+            para usuarios autorizados.
+          </p>
+        </div>
       </div>
     </main>
   );

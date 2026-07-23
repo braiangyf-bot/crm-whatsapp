@@ -14,20 +14,31 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CRM WhatsApp",
+  title: "CRM Comercial Privado",
   description:
-    "CRM para gestión de clientes, campañas y bandeja de conversaciones de WhatsApp.",
-  applicationName: "CRM WhatsApp",
+    "Aplicación privada de gestión comercial para usuarios autorizados.",
+  applicationName: "CRM Comercial Privado",
   manifest: "/manifest.webmanifest",
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+    googleBot: {
+      index: false,
+      follow: false,
+      noimageindex: true,
+    },
+  },
   appleWebApp: {
     capable: true,
-    title: "CRM WhatsApp",
+    title: "CRM Comercial Privado",
     statusBarStyle: "default",
   },
   formatDetection: {
     telephone: false,
   },
 };
+
 export const viewport: Viewport = {
   themeColor: "#0f172a",
   colorScheme: "light",
