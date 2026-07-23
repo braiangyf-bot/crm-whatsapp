@@ -10,8 +10,8 @@ export const config = {
     /*
      * Ejecutar el proxy en rutas privadas de la app,
      * excluyendo archivos públicos, PWA, páginas legales
-     * y el webhook público de WhatsApp.
+     * robots.txt y el webhook público de WhatsApp.
      */
-    "/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|icons/|api/whatsapp/webhook|eliminacion-de-datos|terminos-y-condiciones|politica-de-privacidad|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|robots\\.txt|icons/|api/whatsapp/webhook|eliminacion-de-datos|terminos-y-condiciones|politica-de-privacidad|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
