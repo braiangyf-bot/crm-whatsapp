@@ -9,6 +9,7 @@ import AutoRefrescarChat from "./AutoRefrescarChat";
 import ClienteNotas from "./ClienteNotas";
 import type { Prisma } from "@prisma/client";
 import CambiarEtiquetaConversacion from "../CambiarEtiquetaConversacion";
+import CrearClienteDesdeConversacion from "./CrearClienteDesdeConversacion";
 
 
 export const dynamic = "force-dynamic";
@@ -401,8 +402,16 @@ export default async function ConversacionPage({
                             />
                         </div>
                     ) : (
-                        <div className="mt-4 rounded-lg bg-amber-50 p-4 text-sm text-amber-900">
-                            Este teléfono no está relacionado con un cliente del CRM.
+                        <div className="mt-4">
+                            <div className="rounded-lg bg-amber-50 p-4 text-sm text-amber-900">
+                                Este teléfono no está relacionado con un cliente del CRM.
+                            </div>
+
+                            <CrearClienteDesdeConversacion
+                                conversacionId={conversacion.id}
+                                nombreInicial={nombre}
+                                telefono={conversacion.telefono_cliente}
+                            />
                         </div>
                     )}
                 </section>
