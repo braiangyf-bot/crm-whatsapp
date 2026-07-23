@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 
 const LIMITE_SOLICITUD = 50;
 const TAMANO_BLOQUE_ENVIO = 20;
+const DIAS_BLOQUEO_REENVIO = 7;
 
 const ESTADOS_CLIENTE_PERMITIDOS = [
   "pendiente",
@@ -75,6 +76,12 @@ function dividirEnBloques<T>(
   }
 
   return bloques;
+}
+
+function calcularFechaLimiteDuplicados(): Date {
+  const fecha = new Date();
+  fecha.setDate(fecha.getDate() - DIAS_BLOQUEO_REENVIO);
+  return fecha;
 }
 
 async function enviarPlantillaMeta({
@@ -352,9 +359,69 @@ export async function POST(request: Request) {
         })
       );
 
+    const fechaLimiteDuplicados = calcularFechaLimiteDuplicados();
+
+    const campanasRecientes =
+      await prisma.campanas_enviadas.findMany({
+        where: {
+          cliente_id: {
+            in: clientes.map((cliente) => cliente.id),
+          },
+          nombre_plantilla: templateName,
+          estado: {
+            not: "fallida_api",
+          },
+          OR: [
+            {
+              fecha_enviado_api: {
+                gte: fechaLimiteDuplicados,
+              },
+            },
+            {
+              created_at: {
+                gte: fechaLimiteDuplicados,
+              },
+            },
+          ],
+        },
+        select: {
+          cliente_id: true,
+          created_at: true,
+          fecha_enviado_api: true,
+          nombre_plantilla: true,
+          estado: true,
+          estado_api: true,
+        },
+      });
+
+    const clientesConCampanaReciente = new Set(
+      campanasRecientes.map((campana) => campana.cliente_id),
+    );
+
+    const clientesParaEnviar = clientes.filter(
+      (cliente) => !clientesConCampanaReciente.has(cliente.id),
+    );
+
+    const clientesOmitidosPorDuplicado = clientes.filter(
+      (cliente) => clientesConCampanaReciente.has(cliente.id),
+    );
+
+    for (const cliente of clientesOmitidosPorDuplicado) {
+      totalFallidas += 1;
+
+      resultados.push({
+        cliente_id: cliente.id,
+        nombre: cliente.nombre,
+        telefono: cliente.telefono,
+        ok: false,
+        estado_api: "campana_duplicada_reciente",
+        error: `Ya recibió la plantilla "${templateName}" en los últimos ${DIAS_BLOQUEO_REENVIO} días.`,
+      });
+    }
+
     const bloquesClientes = dividirEnBloques(
-      clientes,
-      TAMANO_BLOQUE_ENVIO
+      clientesParaEnviar,
+      TAMANO_BLOQUE_ENVIO,
     );
 
     for (const bloque of bloquesClientes) {

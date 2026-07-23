@@ -21,6 +21,57 @@ function normalizarTelefonoColombia(telefono: string | null | undefined) {
   return null;
 }
 
+const DIAS_BLOQUEO_REENVIO = 7;
+
+function calcularFechaLimiteDuplicados(): Date {
+  const fecha = new Date();
+  fecha.setDate(fecha.getDate() - DIAS_BLOQUEO_REENVIO);
+  return fecha;
+}
+
+async function buscarCampanaReciente({
+  clienteId,
+  nombrePlantilla,
+}: {
+  clienteId: string;
+  nombrePlantilla: string;
+}) {
+  const fechaLimite = calcularFechaLimiteDuplicados();
+
+  return prisma.campanas_enviadas.findFirst({
+    where: {
+      cliente_id: clienteId,
+      nombre_plantilla: nombrePlantilla,
+      estado: {
+        not: "fallida_api",
+      },
+      OR: [
+        {
+          fecha_enviado_api: {
+            gte: fechaLimite,
+          },
+        },
+        {
+          created_at: {
+            gte: fechaLimite,
+          },
+        },
+      ],
+    },
+    select: {
+      id: true,
+      created_at: true,
+      fecha_enviado_api: true,
+      nombre_plantilla: true,
+      estado: true,
+      estado_api: true,
+    },
+    orderBy: {
+      created_at: "desc",
+    },
+  });
+}
+
 async function enviarPlantillaMeta({
   telefono,
   templateName,
@@ -224,6 +275,26 @@ export async function POST(request: Request) {
           campana: campanaFallida,
         },
         { status: 400 }
+      );
+    }
+
+    const nombrePlantillaControl =
+      nombre_plantilla || meta_template_name;
+
+    const campanaReciente = await buscarCampanaReciente({
+      clienteId: cliente.id,
+      nombrePlantilla: nombrePlantillaControl,
+    });
+
+    if (campanaReciente) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Este cliente ya recibió la plantilla "${nombrePlantillaControl}" en los últimos ${DIAS_BLOQUEO_REENVIO} días.`,
+          codigo: "campana_duplicada_reciente",
+          campana_reciente: campanaReciente,
+        },
+        { status: 409 },
       );
     }
 
