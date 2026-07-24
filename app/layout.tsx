@@ -19,6 +19,9 @@ export const metadata: Metadata = {
     "Aplicación privada de gestión comercial para usuarios autorizados.",
   applicationName: "CRM Comercial Privado",
   manifest: "/manifest.webmanifest",
+  verification: {
+  google: "fgp7R6WDhC1B8eEaKHae2w6IzdM46QKVSGqxFDXMbpQ",
+},
   robots: {
     index: false,
     follow: false,
