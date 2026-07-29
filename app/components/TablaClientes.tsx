@@ -91,6 +91,8 @@ export default function TablaClientes({
   const [mostrandoVistaPrevia, setMostrandoVistaPrevia] =
     useState(false);
 
+  const [bodyVariables, setBodyVariables] = useState<string[]>([]);
+
   const LIMITE_SELECCION = 50;
 
   const idsPermitidos = clientes
@@ -211,6 +213,55 @@ export default function TablaClientes({
 
   }
 
+  function crearVariablesIniciales(variableCount: number): string[] {
+    if (variableCount <= 0) {
+      return [];
+    }
+
+    return Array.from({ length: variableCount }, (_, indice) =>
+      indice === 0 ? "{nombre}" : "",
+    );
+  }
+
+  function cambiarVariableBody(indice: number, valor: string) {
+    setBodyVariables((actuales) => {
+      const nuevas = [...actuales];
+
+      nuevas[indice] = valor;
+
+      return nuevas;
+    });
+
+    setMensaje("");
+    setError("");
+    setVistaPrevia(null);
+    setMostrandoVistaPrevia(false);
+  }
+
+  function validarVariablesFormulario(): string | null {
+    if (!plantillaSeleccionada) {
+      return null;
+    }
+
+    if (plantillaSeleccionada.variableCount <= 1) {
+      return null;
+    }
+
+    for (
+      let indice = 1;
+      indice < plantillaSeleccionada.variableCount;
+      indice += 1
+    ) {
+      const valor = bodyVariables[indice]?.trim();
+
+      if (!valor) {
+        return `Escribe el valor para la variable {{${indice + 1}}}.`;
+      }
+    }
+
+    return null;
+  }
+
   function seleccionarPagina() {
     setMensaje("");
     setError("");
@@ -246,6 +297,8 @@ export default function TablaClientes({
       meta_template_name: plantillaSeleccionada.name,
       meta_template_language: plantillaSeleccionada.language,
       meta_variable_count: plantillaSeleccionada.variableCount,
+      meta_body_variables:
+        plantillaSeleccionada.variableCount > 0 ? bodyVariables : [],
       nuevo_estado_cliente: "contactado",
     };
   }
@@ -271,6 +324,13 @@ export default function TablaClientes({
 
       if (!plantillaSeleccionada) {
         setError("Selecciona una plantilla aprobada de Meta.");
+        return;
+      }
+
+      const errorVariables = validarVariablesFormulario();
+
+      if (errorVariables) {
+        setError(errorVariables);
         return;
       }
 
@@ -346,6 +406,13 @@ export default function TablaClientes({
           "Selecciona una plantilla aprobada de Meta."
         );
 
+        return;
+      }
+
+      const errorVariables = validarVariablesFormulario();
+
+      if (errorVariables) {
+        setError(errorVariables);
         return;
       }
 
@@ -455,6 +522,14 @@ export default function TablaClientes({
             plantilla || null
           );
 
+          setBodyVariables(
+            plantilla
+              ? crearVariablesIniciales(plantilla.variableCount)
+              : [],
+          );
+
+          setVistaPrevia(null);
+          setMostrandoVistaPrevia(false);
           setMensaje("");
           setError("");
         }}
@@ -524,6 +599,50 @@ export default function TablaClientes({
         </p>
       </div>
     )}
+
+    {plantillaSeleccionada &&
+      plantillaSeleccionada.variableCount > 0 && (
+        <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+          <p className="font-semibold">
+            Variables de la plantilla
+          </p>
+
+          <p className="mt-1 text-xs text-blue-800">
+            Puedes usar valores fijos o palabras especiales como{" "}
+            <strong>{"{nombre}"}</strong>,{" "}
+            <strong>{"{telefono}"}</strong> o{" "}
+            <strong>{"{estado}"}</strong>. La variable {"{{1}}"} viene
+            por defecto con el nombre del cliente.
+          </p>
+
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {Array.from({
+              length: plantillaSeleccionada.variableCount,
+            }).map((_, indice) => (
+              <div key={indice}>
+                <label className="mb-1 block text-xs font-semibold text-blue-900">
+                  Variable {"{{"}
+                  {indice + 1}
+                  {"}}"}
+                </label>
+
+                <input
+                  value={bodyVariables[indice] ?? ""}
+                  onChange={(event) =>
+                    cambiarVariableBody(indice, event.target.value)
+                  }
+                  placeholder={
+                    indice === 0
+                      ? "{nombre}"
+                      : `Valor para {{${indice + 1}}}`
+                  }
+                  className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
     {mensaje && (
       <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm font-semibold text-green-700">
@@ -712,7 +831,7 @@ export default function TablaClientes({
         </div>
       </div>
     )}
-    
+
   </div>
 
     <div className="overflow-x-auto">

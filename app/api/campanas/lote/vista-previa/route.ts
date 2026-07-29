@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const LIMITE_SOLICITUD = 50;
-const DIAS_BLOQUEO_REENVIO = 7;
+
 
 function normalizarTelefonoColombia(
   telefono: string | null | undefined,
@@ -24,10 +24,35 @@ function normalizarTelefonoColombia(
   return null;
 }
 
-function calcularFechaLimiteDuplicados(): Date {
-  const fecha = new Date();
-  fecha.setDate(fecha.getDate() - DIAS_BLOQUEO_REENVIO);
-  return fecha;
+
+function normalizarVariablesBody(valor: unknown): string[] {
+  if (!Array.isArray(valor)) {
+    return [];
+  }
+
+  return valor.map((item) => String(item ?? "").trim());
+}
+
+function validarVariablesBody({
+  variableCount,
+  valoresBase,
+}: {
+  variableCount: number;
+  valoresBase: string[];
+}): string | null {
+  if (variableCount <= 1) {
+    return null;
+  }
+
+  for (let indice = 1; indice < variableCount; indice += 1) {
+    const valor = valoresBase[indice]?.trim();
+
+    if (!valor) {
+      return `Falta el valor para la variable {{${indice + 1}}}.`;
+    }
+  }
+
+  return null;
 }
 
 export async function POST(request: Request) {
@@ -60,8 +85,8 @@ export async function POST(request: Request) {
       datos.cliente_ids,
     )
       ? datos.cliente_ids
-          .map((id: unknown): string => String(id ?? "").trim())
-          .filter((id: string): boolean => id.length > 0)
+        .map((id: unknown): string => String(id ?? "").trim())
+        .filter((id: string): boolean => id.length > 0)
       : [];
 
     const clienteIds = Array.from(new Set(clienteIdsRecibidos));
@@ -76,6 +101,10 @@ export async function POST(request: Request) {
 
     const variableCount = Number(
       datos.meta_variable_count ?? 0,
+    );
+
+    const bodyVariablesBase = normalizarVariablesBody(
+      datos.meta_body_variables,
     );
 
     if (clienteIds.length === 0) {
@@ -120,13 +149,29 @@ export async function POST(request: Request) {
 
     if (
       !Number.isInteger(variableCount) ||
-      ![0, 1].includes(variableCount)
+      variableCount < 0 ||
+      variableCount > 20
     ) {
       return NextResponse.json(
         {
           ok: false,
           error:
-            "Solo se permiten plantillas con 0 o 1 variable.",
+            "Solo se permiten plantillas entre 0 y 20 variables.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const errorVariablesBody = validarVariablesBody({
+      variableCount,
+      valoresBase: bodyVariablesBase,
+    });
+
+    if (errorVariablesBody) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: errorVariablesBody,
         },
         { status: 400 },
       );
@@ -162,55 +207,11 @@ export async function POST(request: Request) {
       (cliente) => cliente.estado !== "no_responde",
     );
 
-    const fechaLimiteDuplicados = calcularFechaLimiteDuplicados();
-
-    const campanasRecientes =
-      await prisma.campanas_enviadas.findMany({
-        where: {
-          cliente_id: {
-            in: clientesElegiblesPorEstado.map(
-              (cliente) => cliente.id,
-            ),
-          },
-          nombre_plantilla: templateName,
-          estado: {
-            not: "fallida_api",
-          },
-          OR: [
-            {
-              fecha_enviado_api: {
-                gte: fechaLimiteDuplicados,
-              },
-            },
-            {
-              created_at: {
-                gte: fechaLimiteDuplicados,
-              },
-            },
-          ],
-        },
-        select: {
-          cliente_id: true,
-        },
-      });
-
-    const clientesConCampanaReciente = new Set(
-      campanasRecientes.map((campana) => campana.cliente_id),
-    );
-
-    const clientesDuplicados = clientesElegiblesPorEstado.filter(
-      (cliente) => clientesConCampanaReciente.has(cliente.id),
-    );
-
-    const clientesSinDuplicado = clientesElegiblesPorEstado.filter(
-      (cliente) => !clientesConCampanaReciente.has(cliente.id),
-    );
-
-    const clientesTelefonoInvalido = clientesSinDuplicado.filter(
+    const clientesTelefonoInvalido = clientesElegiblesPorEstado.filter(
       (cliente) => !normalizarTelefonoColombia(cliente.telefono),
     );
 
-    const clientesEnviables = clientesSinDuplicado.filter(
+    const clientesEnviables = clientesElegiblesPorEstado.filter(
       (cliente) => normalizarTelefonoColombia(cliente.telefono),
     );
 
@@ -231,15 +232,6 @@ export async function POST(request: Request) {
           "Cliente omitido porque está marcado como No responde.",
       })),
 
-      ...clientesDuplicados.map((cliente) => ({
-        cliente_id: cliente.id,
-        nombre: cliente.nombre,
-        telefono: cliente.telefono,
-        estado: cliente.estado,
-        codigo: "campana_duplicada_reciente",
-        motivo: `Ya recibió la plantilla "${templateName}" en los últimos ${DIAS_BLOQUEO_REENVIO} días.`,
-      })),
-
       ...clientesTelefonoInvalido.map((cliente) => ({
         cliente_id: cliente.id,
         nombre: cliente.nombre,
@@ -257,6 +249,7 @@ export async function POST(request: Request) {
         nombre: templateName,
         idioma: templateLanguage,
         variables: variableCount,
+        variables_body: bodyVariablesBase,
       },
       total_seleccionados: clienteIds.length,
       total_encontrados: clientes.length,
@@ -264,7 +257,7 @@ export async function POST(request: Request) {
       total_omitidos: clientesOmitidos.length,
       omitidos_no_encontrados: idsNoEncontrados.length,
       omitidos_no_responde: clientesNoResponde.length,
-      omitidos_duplicados: clientesDuplicados.length,
+      omitidos_duplicados: 0,
       omitidos_telefono_invalido: clientesTelefonoInvalido.length,
       clientes_enviables: clientesEnviables.map((cliente) => ({
         cliente_id: cliente.id,

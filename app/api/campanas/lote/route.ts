@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 const LIMITE_SOLICITUD = 50;
 const TAMANO_BLOQUE_ENVIO = 20;
-const DIAS_BLOQUEO_REENVIO = 7;
+
 
 const ESTADOS_CLIENTE_PERMITIDOS = [
   "pendiente",
@@ -78,24 +78,113 @@ function dividirEnBloques<T>(
   return bloques;
 }
 
-function calcularFechaLimiteDuplicados(): Date {
-  const fecha = new Date();
-  fecha.setDate(fecha.getDate() - DIAS_BLOQUEO_REENVIO);
-  return fecha;
+
+function normalizarVariablesBody(valor: unknown): string[] {
+  if (!Array.isArray(valor)) {
+    return [];
+  }
+
+  return valor.map((item) => String(item ?? "").trim());
+}
+
+type ClienteParaVariables = {
+  nombre: string;
+  telefono: string | null;
+  estado: string | null;
+};
+
+function resolverVariablePlantilla(
+  valor: string,
+  cliente: ClienteParaVariables,
+): string {
+  const limpio = valor.trim();
+
+  if (
+    limpio === "{nombre}" ||
+    limpio === "{{nombre}}" ||
+    limpio === "nombre" ||
+    limpio === "nombre_cliente"
+  ) {
+    return cliente.nombre || "cliente";
+  }
+
+  if (
+    limpio === "{telefono}" ||
+    limpio === "{{telefono}}" ||
+    limpio === "telefono" ||
+    limpio === "telefono_cliente"
+  ) {
+    return cliente.telefono || "";
+  }
+
+  if (
+    limpio === "{estado}" ||
+    limpio === "{{estado}}" ||
+    limpio === "estado" ||
+    limpio === "estado_cliente"
+  ) {
+    return cliente.estado || "";
+  }
+
+  return limpio;
+}
+
+function construirVariablesBody({
+  variableCount,
+  valoresBase,
+  cliente,
+}: {
+  variableCount: number;
+  valoresBase: string[];
+  cliente: ClienteParaVariables;
+}): string[] {
+  if (variableCount <= 0) {
+    return [];
+  }
+
+  return Array.from({ length: variableCount }, (_, indice) => {
+    const valorBase = valoresBase[indice]?.trim() ?? "";
+
+    if (!valorBase && indice === 0) {
+      return cliente.nombre || "cliente";
+    }
+
+    return resolverVariablePlantilla(valorBase, cliente);
+  });
+}
+
+function validarVariablesBody({
+  variableCount,
+  valoresBase,
+}: {
+  variableCount: number;
+  valoresBase: string[];
+}): string | null {
+  if (variableCount <= 1) {
+    return null;
+  }
+
+  for (let indice = 1; indice < variableCount; indice += 1) {
+    const valor = valoresBase[indice]?.trim();
+
+    if (!valor) {
+      return `Falta el valor para la variable {{${indice + 1}}}.`;
+    }
+  }
+
+  return null;
 }
 
 async function enviarPlantillaMeta({
   telefono,
   templateName,
   language,
-  variableCount,
-  nombreCliente,
+  bodyVariables,
 }: {
   telefono: string;
   templateName: string;
   language: string;
-  variableCount: number;
-  nombreCliente: string;
+  bodyVariables: string[];
 }): Promise<RespuestaMeta> {
   const token = process.env.WHATSAPP_TOKEN;
   const phoneNumberId =
@@ -134,16 +223,14 @@ async function enviarPlantillaMeta({
     },
   };
 
-  if (variableCount === 1) {
+  if (bodyVariables.length > 0) {
     template.components = [
       {
         type: "body",
-        parameters: [
-          {
-            type: "text",
-            text: nombreCliente || "cliente",
-          },
-        ],
+        parameters: bodyVariables.map((valor) => ({
+          type: "text",
+          text: valor,
+        })),
       },
     ];
   }
@@ -236,6 +323,10 @@ export async function POST(request: Request) {
       datos.meta_variable_count ?? 0
     );
 
+    const bodyVariablesBase = normalizarVariablesBody(
+      datos.meta_body_variables,
+    );
+
     const estadoSolicitado = String(
       datos.nuevo_estado_cliente ?? "contactado"
     ).trim();
@@ -289,13 +380,29 @@ export async function POST(request: Request) {
 
     if (
       !Number.isInteger(variableCount) ||
-      ![0, 1].includes(variableCount)
+      variableCount < 0 ||
+      variableCount > 20
     ) {
       return NextResponse.json(
         {
           ok: false,
           error:
-            "Solo se permiten plantillas con 0 o 1 variable.",
+            "Solo se permiten plantillas entre 0 y 20 variables.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const errorVariablesBody = validarVariablesBody({
+      variableCount,
+      valoresBase: bodyVariablesBase,
+    });
+
+    if (errorVariablesBody) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: errorVariablesBody,
         },
         { status: 400 }
       );
@@ -382,66 +489,7 @@ export async function POST(request: Request) {
       });
     }
 
-    const fechaLimiteDuplicados = calcularFechaLimiteDuplicados();
-
-    const campanasRecientes =
-      await prisma.campanas_enviadas.findMany({
-        where: {
-          cliente_id: {
-            in: clientesElegiblesPorEstado.map((cliente) => cliente.id),
-          },
-          nombre_plantilla: templateName,
-          estado: {
-            not: "fallida_api",
-          },
-          OR: [
-            {
-              fecha_enviado_api: {
-                gte: fechaLimiteDuplicados,
-              },
-            },
-            {
-              created_at: {
-                gte: fechaLimiteDuplicados,
-              },
-            },
-          ],
-        },
-        select: {
-          cliente_id: true,
-          created_at: true,
-          fecha_enviado_api: true,
-          nombre_plantilla: true,
-          estado: true,
-          estado_api: true,
-        },
-      });
-
-    const clientesConCampanaReciente = new Set(
-      campanasRecientes.map((campana) => campana.cliente_id),
-    );
-
-    const clientesParaEnviar = clientesElegiblesPorEstado.filter(
-      (cliente) => !clientesConCampanaReciente.has(cliente.id),
-    );
-
-    const clientesOmitidosPorDuplicado = clientesElegiblesPorEstado.filter(
-      (cliente) => clientesConCampanaReciente.has(cliente.id),
-    );
-
-    for (const cliente of clientesOmitidosPorDuplicado) {
-      totalFallidas += 1;
-
-      resultados.push({
-        cliente_id: cliente.id,
-        nombre: cliente.nombre,
-        telefono: cliente.telefono,
-        ok: false,
-        estado_api: "campana_duplicada_reciente",
-        error: `Ya recibió la plantilla "${templateName}" en los últimos ${DIAS_BLOQUEO_REENVIO} días.`,
-      });
-    }
-
+    const clientesParaEnviar = clientesElegiblesPorEstado;
     const bloquesClientes = dividirEnBloques(
       clientesParaEnviar,
       TAMANO_BLOQUE_ENVIO,
@@ -496,12 +544,21 @@ export async function POST(request: Request) {
         }
 
         try {
+          const bodyVariables = construirVariablesBody({
+            variableCount,
+            valoresBase: bodyVariablesBase,
+            cliente: {
+              nombre: cliente.nombre,
+              telefono: cliente.telefono,
+              estado: cliente.estado,
+            },
+          });
+
           const resultadoApi = await enviarPlantillaMeta({
             telefono: telefonoNormalizado,
             templateName,
             language: templateLanguage,
-            variableCount,
-            nombreCliente: cliente.nombre,
+            bodyVariables,
           });
 
           /*
