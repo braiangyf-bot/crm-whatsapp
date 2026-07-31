@@ -9,6 +9,22 @@ type DatosNuevoMensajeWhatsApp = {
   tipo?: string | null;
 };
 
+function obtenerUrlBaseApp(): string {
+  const urlConfigurada =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.APP_URL;
+
+  if (urlConfigurada) {
+    return urlConfigurada.replace(/\/$/, "");
+  }
+
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+
+  return "http://localhost:3000";
+}
+
 function recortarTexto(texto: string, maximo = 120) {
   if (texto.length <= maximo) {
     return texto;
@@ -96,7 +112,7 @@ export async function notificarNuevoMensajeWhatsApp(
           {
             title: "Nuevo mensaje de WhatsApp",
             body: construirCuerpoNotificacion(datos),
-            url: `/bandeja/${datos.conversacionId}`,
+            url: `${obtenerUrlBaseApp()}/bandeja/${datos.conversacionId}`,
             tag: `whatsapp-${datos.conversacionId}`,
           }
         );
