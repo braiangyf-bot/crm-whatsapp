@@ -16,7 +16,8 @@ type MetaTemplate = {
 };
 
 function contarVariables(texto: string) {
-  const variables = texto.match(/{{\d+}}/g);
+  const variables = texto.match(/\{\{[a-z0-9_]+\}\}/g);
+
   return variables ? variables.length : 0;
 }
 
@@ -103,7 +104,7 @@ export async function GET() {
         };
       })
       .filter((plantilla) => !plantilla.tieneMultimedia)
-      .filter((plantilla) => plantilla.variableCount <= 1);
+      .filter((plantilla) => plantilla.variableCount <= 20);
 
     return NextResponse.json({
       ok: true,
