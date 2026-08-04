@@ -5,6 +5,12 @@ type MetaTemplateComponent = {
   type: string;
   format?: string;
   text?: string;
+  example?: {
+    body_text_named_params?: Array<{
+      param_name?: string;
+      example?: string;
+    }>;
+  };
 };
 
 type MetaTemplate = {
@@ -15,10 +21,35 @@ type MetaTemplate = {
   components?: MetaTemplateComponent[];
 };
 
-function contarVariables(texto: string) {
-  const variables = texto.match(/\{\{[a-z0-9_]+\}\}/g);
+function obtenerVariablesPorTexto(texto: string) {
+  const variables = Array.from(
+    texto.matchAll(/\{\{([a-z0-9_]+)\}\}/g)
+  );
 
-  return variables ? variables.length : 0;
+  return variables.map((variable) => variable[1]);
+}
+
+function obtenerVariablesPorEjemplo(
+  componente?: MetaTemplateComponent
+) {
+  return (
+    componente?.example?.body_text_named_params
+      ?.map((parametro) => String(parametro.param_name ?? "").trim())
+      .filter((nombre) => /^[a-z0-9_]+$/.test(nombre)) ?? []
+  );
+}
+
+function obtenerVariablesBody(
+  bodyText: string,
+  componente?: MetaTemplateComponent
+) {
+  const variablesPorEjemplo = obtenerVariablesPorEjemplo(componente);
+
+  if (variablesPorEjemplo.length > 0) {
+    return variablesPorEjemplo;
+  }
+
+  return obtenerVariablesPorTexto(bodyText);
 }
 
 export async function GET() {
@@ -86,7 +117,8 @@ export async function GET() {
         );
 
         const bodyText = cuerpo?.text || "";
-        const variableCount = contarVariables(bodyText);
+        const variableNames = obtenerVariablesBody(bodyText, cuerpo);
+        const variableCount = variableNames.length;
 
         return {
           name: plantilla.name,
@@ -95,6 +127,7 @@ export async function GET() {
           category: plantilla.category,
           bodyText,
           variableCount,
+          variableNames,
           tieneMultimedia:
             Boolean(tieneImagen) ||
             Boolean(tieneVideo) ||
