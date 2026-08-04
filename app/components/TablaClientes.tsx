@@ -26,6 +26,7 @@ type PlantillaMeta = {
   category: string;
   bodyText: string;
   variableCount: number;
+  variableNames?: string[];
 };
 
 type ClienteVistaPrevia = {
@@ -299,6 +300,7 @@ export default function TablaClientes({
       meta_variable_count: plantillaSeleccionada.variableCount,
       meta_body_variables:
         plantillaSeleccionada.variableCount > 0 ? bodyVariables : [],
+      meta_variable_names: plantillaSeleccionada.variableNames ?? [],
       nuevo_estado_cliente: "contactado",
     };
   }
@@ -611,35 +613,41 @@ export default function TablaClientes({
             Puedes usar valores fijos o palabras especiales como{" "}
             <strong>{"{nombre}"}</strong>,{" "}
             <strong>{"{telefono}"}</strong> o{" "}
-            <strong>{"{estado}"}</strong>. La variable {"{{1}}"} viene
-            por defecto con el nombre del cliente.
+            <strong>{"{estado}"}</strong>. La primera variable viene por defecto con el nombre del cliente.
           </p>
 
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {Array.from({
               length: plantillaSeleccionada.variableCount,
-            }).map((_, indice) => (
-              <div key={indice}>
-                <label className="mb-1 block text-xs font-semibold text-blue-900">
-                  Variable {"{{"}
-                  {indice + 1}
-                  {"}}"}
-                </label>
+            }).map((_, indice) => {
+              const nombreVariable =
+                plantillaSeleccionada.variableNames?.[indice];
 
-                <input
-                  value={bodyVariables[indice] ?? ""}
-                  onChange={(event) =>
-                    cambiarVariableBody(indice, event.target.value)
-                  }
-                  placeholder={
-                    indice === 0
-                      ? "{nombre}"
-                      : `Valor para {{${indice + 1}}}`
-                  }
-                  className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                />
-              </div>
-            ))}
+              const etiquetaVariable = nombreVariable
+                ? `{{${nombreVariable}}}`
+                : `{{${indice + 1}}}`;
+
+              return (
+                <div key={indice}>
+                  <label className="mb-1 block text-xs font-semibold text-blue-900">
+                    Variable {etiquetaVariable}
+                  </label>
+
+                  <input
+                    value={bodyVariables[indice] ?? ""}
+                    onChange={(event) =>
+                      cambiarVariableBody(indice, event.target.value)
+                    }
+                    placeholder={
+                      indice === 0
+                        ? "{nombre}"
+                        : `Valor para ${etiquetaVariable}`
+                    }
+                    className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

@@ -87,6 +87,16 @@ function normalizarVariablesBody(valor: unknown): string[] {
   return valor.map((item) => String(item ?? "").trim());
 }
 
+function normalizarNombresVariablesBody(valor: unknown): string[] {
+  if (!Array.isArray(valor)) {
+    return [];
+  }
+
+  return valor
+    .map((item) => String(item ?? "").trim())
+    .filter((nombre) => /^[a-z0-9_]+$/.test(nombre));
+}
+
 type ClienteParaVariables = {
   nombre: string;
   telefono: string | null;
@@ -180,11 +190,13 @@ async function enviarPlantillaMeta({
   templateName,
   language,
   bodyVariables,
+  bodyVariableNames,
 }: {
   telefono: string;
   templateName: string;
   language: string;
   bodyVariables: string[];
+  bodyVariableNames: string[];
 }): Promise<RespuestaMeta> {
   const token = process.env.WHATSAPP_TOKEN;
   const phoneNumberId =
@@ -214,6 +226,7 @@ async function enviarPlantillaMeta({
       parameters: Array<{
         type: "text";
         text: string;
+        parameter_name?: string;
       }>;
     }>;
   } = {
@@ -227,10 +240,22 @@ async function enviarPlantillaMeta({
     template.components = [
       {
         type: "body",
-        parameters: bodyVariables.map((valor) => ({
-          type: "text",
-          text: valor,
-        })),
+        parameters: bodyVariables.map((valor, indice) => {
+          const parameterName = bodyVariableNames[indice]?.trim();
+
+          if (parameterName && !/^\d+$/.test(parameterName)) {
+            return {
+              type: "text",
+              parameter_name: parameterName,
+              text: valor,
+            };
+          }
+
+          return {
+            type: "text",
+            text: valor,
+          };
+        }),
       },
     ];
   }
@@ -325,6 +350,10 @@ export async function POST(request: Request) {
 
     const bodyVariablesBase = normalizarVariablesBody(
       datos.meta_body_variables,
+    );
+
+    const bodyVariableNames = normalizarNombresVariablesBody(
+      datos.meta_variable_names,
     );
 
     const estadoSolicitado = String(
@@ -559,6 +588,7 @@ export async function POST(request: Request) {
             templateName,
             language: templateLanguage,
             bodyVariables,
+            bodyVariableNames,
           });
 
           /*
