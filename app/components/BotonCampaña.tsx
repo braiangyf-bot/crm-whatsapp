@@ -9,6 +9,7 @@ type PlantillaMeta = {
   category: string;
   bodyText: string;
   variableCount: number;
+  variableNames?: string[];
   tieneMultimedia: boolean;
 };
 
@@ -19,6 +20,28 @@ type BotonCampañaProps = {
 
   // Lo dejamos para no romper app/page.tsx si todavía lo está enviando.
   plantillas?: unknown[];
+};
+
+type RespuestaPlantillas = {
+  plantillas?: PlantillaMeta[];
+  error?: string;
+  detalle?: {
+    error?: {
+      message?: string;
+    };
+  };
+};
+
+type RespuestaCampana = {
+  error?: string;
+  detalle?: {
+    error?: {
+      message?: string;
+      error_data?: {
+        details?: string;
+      };
+    };
+  };
 };
 
 export default function BotonCampaña({
@@ -39,8 +62,48 @@ export default function BotonCampaña({
     (plantilla) => `${plantilla.name}|${plantilla.language}` === plantillaKey
   );
 
+  function crearVariablesBody(): string[] {
+    if (!plantillaSeleccionada || plantillaSeleccionada.variableCount <= 0) {
+      return [];
+    }
+
+    return Array.from(
+      { length: plantillaSeleccionada.variableCount },
+      (_, indice) => {
+        if (indice === 0) {
+          return nombreCliente || "cliente";
+        }
+
+        return "";
+      }
+    );
+  }
+
+  function reemplazarVariablesVistaPrevia(texto: string): string {
+    let resultado = texto;
+
+    if (!plantillaSeleccionada) {
+      return resultado;
+    }
+
+    const variablesBody = crearVariablesBody();
+
+    plantillaSeleccionada.variableNames?.forEach((nombreVariable, indice) => {
+      resultado = resultado.replaceAll(
+        `{{${nombreVariable}}}`,
+        variablesBody[indice] || ""
+      );
+    });
+
+    variablesBody.forEach((valor, indice) => {
+      resultado = resultado.replaceAll(`{{${indice + 1}}}`, valor);
+    });
+
+    return resultado;
+  }
+
   const mensajePreview = plantillaSeleccionada
-    ? plantillaSeleccionada.bodyText.replaceAll("{{1}}", nombreCliente)
+    ? reemplazarVariablesVistaPrevia(plantillaSeleccionada.bodyText)
     : "";
 
   async function cargarPlantillasMeta() {
@@ -49,8 +112,8 @@ export default function BotonCampaña({
       setError("");
       setExito("");
 
-      const respuesta = await fetch("/api/whatsapp/plantillas");
-      const data = await respuesta.json();
+      const respuesta: Response = await fetch("/api/whatsapp/plantillas");
+      const data = (await respuesta.json()) as RespuestaPlantillas;
 
       if (!respuesta.ok) {
         const mensajeError =
@@ -63,8 +126,8 @@ export default function BotonCampaña({
       }
 
       setPlantillasMeta(data.plantillas || []);
-    } catch (error) {
-      console.warn("ERROR CARGANDO PLANTILLAS META:", error);
+    } catch (errorDesconocido) {
+      console.warn("ERROR CARGANDO PLANTILLAS META:", errorDesconocido);
       setError("Error inesperado cargando plantillas de Meta.");
     } finally {
       setCargandoPlantillas(false);
@@ -88,7 +151,7 @@ export default function BotonCampaña({
 
       setCargando(true);
 
-      const respuesta = await fetch("/api/campanas", {
+      const respuesta: Response = await fetch("/api/campanas", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -104,10 +167,12 @@ export default function BotonCampaña({
           meta_template_name: plantillaSeleccionada.name,
           meta_template_language: plantillaSeleccionada.language,
           meta_variable_count: plantillaSeleccionada.variableCount,
+          meta_body_variables: crearVariablesBody(),
+          meta_variable_names: plantillaSeleccionada.variableNames ?? [],
         }),
       });
 
-      const data = await respuesta.json();
+      const data = (await respuesta.json()) as RespuestaCampana;
 
       if (!respuesta.ok) {
         const mensajeError =
@@ -131,8 +196,8 @@ export default function BotonCampaña({
         setExito("");
         setError("");
       }, 1500);
-    } catch (error) {
-      console.warn("ERROR EN BOTON CAMPAÑA:", error);
+    } catch (errorDesconocido) {
+      console.warn("ERROR EN BOTON CAMPAÑA:", errorDesconocido);
       setError("Error inesperado enviando campaña.");
     } finally {
       setCargando(false);

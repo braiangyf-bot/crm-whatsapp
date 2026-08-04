@@ -21,18 +21,40 @@ function normalizarTelefonoColombia(telefono: string | null | undefined) {
   return null;
 }
 
+function normalizarVariablesBody(valor: unknown): string[] {
+  if (!Array.isArray(valor)) {
+    return [];
+  }
+
+  return valor.map((item) => String(item ?? "").trim());
+}
+
+function normalizarNombresVariablesBody(valor: unknown): string[] {
+  if (!Array.isArray(valor)) {
+    return [];
+  }
+
+  return valor
+    .map((item) => String(item ?? "").trim())
+    .filter((nombre) => /^[a-z0-9_]+$/.test(nombre));
+}
+
 async function enviarPlantillaMeta({
   telefono,
   templateName,
   language,
   variableCount,
   nombreCliente,
+  bodyVariables,
+  bodyVariableNames,
 }: {
   telefono: string;
   templateName: string;
   language: string;
   variableCount: number;
   nombreCliente: string;
+  bodyVariables: string[];
+  bodyVariableNames: string[];
 }) {
   const token = process.env.WHATSAPP_TOKEN;
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -56,6 +78,7 @@ async function enviarPlantillaMeta({
       parameters: Array<{
         type: "text";
         text: string;
+        parameter_name?: string;
       }>;
     }>;
   } = {
@@ -66,15 +89,28 @@ async function enviarPlantillaMeta({
   };
 
   if (variableCount === 1) {
+    const textoVariable =
+      bodyVariables[0]?.trim() || nombreCliente || "cliente";
+
+    const parameterName = bodyVariableNames[0]?.trim();
+
+    const parametro: {
+      type: "text";
+      text: string;
+      parameter_name?: string;
+    } = {
+      type: "text",
+      text: textoVariable,
+    };
+
+    if (parameterName && !/^\d+$/.test(parameterName)) {
+      parametro.parameter_name = parameterName;
+    }
+
     template.components = [
       {
         type: "body",
-        parameters: [
-          {
-            type: "text",
-            text: nombreCliente || "cliente",
-          },
-        ],
+        parameters: [parametro],
       },
     ];
   }
@@ -122,6 +158,11 @@ export async function POST(request: Request) {
     const meta_template_name = String(body.meta_template_name || "");
     const meta_template_language = String(body.meta_template_language || "es");
     const meta_variable_count = Number(body.meta_variable_count ?? 0);
+    const meta_body_variables = normalizarVariablesBody(body.meta_body_variables);
+
+    const meta_variable_names = normalizarNombresVariablesBody(
+      body.meta_variable_names
+    );
 
     if (canal !== "api_oficial") {
       return NextResponse.json(
@@ -252,6 +293,8 @@ export async function POST(request: Request) {
       language: meta_template_language,
       variableCount: meta_variable_count,
       nombreCliente: cliente.nombre,
+      bodyVariables: meta_body_variables,
+      bodyVariableNames: meta_variable_names,
     });
 
     if (!resultadoApi.ok) {
