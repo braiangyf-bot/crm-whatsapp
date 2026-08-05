@@ -1,12 +1,19 @@
 "use client";
 
-import { useRef, useState, KeyboardEvent } from "react";
+import { useEffect, useRef, useState, KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import AdjuntosWhatsApp from "./AdjuntosWhatsApp";
 
 type ResponderLibreProps = {
   conversacionId: string;
   ventanaActiva: boolean;
+};
+
+type RespuestaRapidaApi = {
+  id: string;
+  titulo: string;
+  contenido: string;
+  activa: boolean;
 };
 
 const EMOJIS = [
@@ -32,7 +39,7 @@ const EMOJIS = [
   "🤝",
 ];
 
-const RESPUESTAS_RAPIDAS = [
+const RESPUESTAS_RAPIDAS_RESPALDO = [
   "Hola, ¿cómo estás? 😊",
   "Claro, con mucho gusto te ayudo.",
   "¿Me confirmas por favor tu nombre y dirección?",
@@ -54,8 +61,55 @@ export default function ResponderLibre({
   const [mostrarEmojis, setMostrarEmojis] = useState(false);
   const [mostrarRapidas, setMostrarRapidas] = useState(false);
 
+  const [respuestasRapidas, setRespuestasRapidas] = useState<string[]>(
+    RESPUESTAS_RAPIDAS_RESPALDO,
+  );
+
+  const [cargandoRapidas, setCargandoRapidas] = useState(false);
+  const [errorRapidas, setErrorRapidas] = useState<string | null>(null);
+
   const mensajeLimpio = mensaje.trim();
   const puedeEnviar = ventanaActiva && mensajeLimpio.length > 0 && !enviando;
+
+  useEffect(() => {
+    async function cargarRespuestasRapidas() {
+      try {
+        setCargandoRapidas(true);
+        setErrorRapidas(null);
+
+        const respuesta: Response = await fetch("/api/respuestas-rapidas", {
+          cache: "no-store",
+        });
+
+        const data = await respuesta.json();
+
+        if (!respuesta.ok) {
+          throw new Error(
+            data.error || "No se pudieron cargar las respuestas rápidas.",
+          );
+        }
+
+        const respuestasActivas = ((data.respuestas || []) as RespuestaRapidaApi[])
+          .filter((respuestaRapida) => respuestaRapida.activa)
+          .map((respuestaRapida) => respuestaRapida.contenido.trim())
+          .filter((contenido) => contenido.length > 0);
+
+        setRespuestasRapidas(respuestasActivas);
+      } catch (errorDesconocido) {
+        console.warn("Error cargando respuestas rápidas:", errorDesconocido);
+
+        setErrorRapidas(
+          "No se pudieron cargar desde la base de datos. Se muestran respuestas de respaldo.",
+        );
+
+        setRespuestasRapidas(RESPUESTAS_RAPIDAS_RESPALDO);
+      } finally {
+        setCargandoRapidas(false);
+      }
+    }
+
+    cargarRespuestasRapidas();
+  }, []);
 
   function crearIdempotencyKey() {
     if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -126,8 +180,8 @@ export default function ResponderLibre({
       if (!respuesta.ok) {
         throw new Error(
           data?.error ||
-          data?.mensaje ||
-          "No se pudo enviar el mensaje",
+            data?.mensaje ||
+            "No se pudo enviar el mensaje",
         );
       }
 
@@ -135,12 +189,12 @@ export default function ResponderLibre({
       setMostrarEmojis(false);
       setMostrarRapidas(false);
       router.refresh();
-    } catch (error) {
-      console.error("Error enviando respuesta:", error);
+    } catch (errorDesconocido) {
+      console.error("Error enviando respuesta:", errorDesconocido);
 
       setError(
-        error instanceof Error
-          ? error.message
+        errorDesconocido instanceof Error
+          ? errorDesconocido.message
           : "No se pudo enviar el mensaje",
       );
     } finally {
@@ -159,13 +213,13 @@ export default function ResponderLibre({
     return (
       <section className="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <p className="text-sm font-semibold text-slate-800">
-          No puedes responder con mensaje libre porque la ventana de 24
-          horas está cerrada.
+          No puedes responder con mensaje libre porque la ventana de 24 horas
+          está cerrada.
         </p>
 
         <p className="mt-1 text-sm text-slate-500">
-          Para escribirle de nuevo al cliente, debes usar una plantilla
-          oficial aprobada por Meta.
+          Para escribirle de nuevo al cliente, debes usar una plantilla oficial
+          aprobada por Meta.
         </p>
       </section>
     );
@@ -228,14 +282,43 @@ export default function ResponderLibre({
 
       {mostrarRapidas ? (
         <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Respuestas guardadas
+            </p>
+
+            <a
+              href="/respuestas-rapidas"
+              className="text-xs font-bold text-emerald-700 hover:underline"
+            >
+              Administrar
+            </a>
+          </div>
+
+          {cargandoRapidas ? (
+            <p className="rounded-lg bg-white px-3 py-2 text-sm text-slate-500 shadow-sm">
+              Cargando respuestas rápidas...
+            </p>
+          ) : null}
+
+          {errorRapidas ? (
+            <p className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+              {errorRapidas}
+            </p>
+          ) : null}
+
+          {!cargandoRapidas && respuestasRapidas.length === 0 ? (
+            <p className="rounded-lg bg-white px-3 py-2 text-sm text-slate-500 shadow-sm">
+              No hay respuestas rápidas activas.
+            </p>
+          ) : null}
+
           <div className="grid gap-2">
-            {RESPUESTAS_RAPIDAS.map((respuestaRapida) => (
+            {respuestasRapidas.map((respuestaRapida) => (
               <button
                 key={respuestaRapida}
                 type="button"
-                onClick={() =>
-                  usarRespuestaRapida(respuestaRapida)
-                }
+                onClick={() => usarRespuestaRapida(respuestaRapida)}
                 className="rounded-lg bg-white px-3 py-2 text-left text-sm text-slate-700 shadow-sm hover:bg-slate-100"
               >
                 {respuestaRapida}
@@ -255,7 +338,7 @@ export default function ResponderLibre({
         placeholder="Escribe tu respuesta..."
         className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
       />
-   
+
       <AdjuntosWhatsApp
         conversacionId={conversacionId}
         ventanaActiva={ventanaActiva}

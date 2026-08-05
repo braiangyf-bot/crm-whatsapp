@@ -189,3 +189,14 @@ model suscripciones_push {
 
   @@index([usuario_id], map: "suscripciones_push_usuario_idx")
 }
+
+model respuestas_rapidas {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  titulo     String
+  contenido  String
+  activa     Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([activa])
+}
