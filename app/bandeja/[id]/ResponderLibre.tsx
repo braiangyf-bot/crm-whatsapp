@@ -39,15 +39,6 @@ const EMOJIS = [
   "🤝",
 ];
 
-const RESPUESTAS_RAPIDAS_RESPALDO = [
-  "Hola, ¿cómo estás? 😊",
-  "Claro, con mucho gusto te ayudo.",
-  "¿Me confirmas por favor tu nombre y dirección?",
-  "Nuestro horario de atención es de lunes a viernes de 8:00 a.m. a 5:00 p.m.",
-  "Manejamos pago contraentrega en Medellín y área metropolitana.",
-  "Gracias por escribirnos. Ya reviso tu caso.",
-];
-
 export default function ResponderLibre({
   conversacionId,
   ventanaActiva,
@@ -61,9 +52,7 @@ export default function ResponderLibre({
   const [mostrarEmojis, setMostrarEmojis] = useState(false);
   const [mostrarRapidas, setMostrarRapidas] = useState(false);
 
-  const [respuestasRapidas, setRespuestasRapidas] = useState<string[]>(
-    RESPUESTAS_RAPIDAS_RESPALDO,
-  );
+  const [respuestasRapidas, setRespuestasRapidas] = useState<string[]>([]);
 
   const [cargandoRapidas, setCargandoRapidas] = useState(false);
   const [errorRapidas, setErrorRapidas] = useState<string | null>(null);
@@ -99,10 +88,10 @@ export default function ResponderLibre({
         console.warn("Error cargando respuestas rápidas:", errorDesconocido);
 
         setErrorRapidas(
-          "No se pudieron cargar desde la base de datos. Se muestran respuestas de respaldo.",
+          "No se pudieron cargar las respuestas rápidas desde la base de datos.",
         );
 
-        setRespuestasRapidas(RESPUESTAS_RAPIDAS_RESPALDO);
+        setRespuestasRapidas([]);
       } finally {
         setCargandoRapidas(false);
       }
@@ -180,8 +169,8 @@ export default function ResponderLibre({
       if (!respuesta.ok) {
         throw new Error(
           data?.error ||
-            data?.mensaje ||
-            "No se pudo enviar el mensaje",
+          data?.mensaje ||
+          "No se pudo enviar el mensaje",
         );
       }
 
@@ -314,9 +303,9 @@ export default function ResponderLibre({
           ) : null}
 
           <div className="grid gap-2">
-            {respuestasRapidas.map((respuestaRapida) => (
+            {respuestasRapidas.map((respuestaRapida, indice) => (
               <button
-                key={respuestaRapida}
+                key={`${respuestaRapida}-${indice}`}
                 type="button"
                 onClick={() => usarRespuestaRapida(respuestaRapida)}
                 className="rounded-lg bg-white px-3 py-2 text-left text-sm text-slate-700 shadow-sm hover:bg-slate-100"
