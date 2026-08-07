@@ -2,6 +2,11 @@
 
 import { useState } from "react";
 
+type ComponentePlantillaMeta = {
+  type: string;
+  format?: string;
+};
+
 type PlantillaMeta = {
   name: string;
   language: string;
@@ -11,6 +16,7 @@ type PlantillaMeta = {
   variableCount: number;
   variableNames?: string[];
   tieneMultimedia: boolean;
+  components?: ComponentePlantillaMeta[];
 };
 
 type BotonCampañaProps = {
@@ -44,6 +50,18 @@ type RespuestaCampana = {
   };
 };
 
+function formatearTamano(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 export default function BotonCampaña({
   clienteId,
   nombreCliente,
@@ -57,10 +75,24 @@ export default function BotonCampaña({
 
   const [plantillasMeta, setPlantillasMeta] = useState<PlantillaMeta[]>([]);
   const [plantillaKey, setPlantillaKey] = useState("");
+  const [imagenHeader, setImagenHeader] = useState<File | null>(null);
 
   const plantillaSeleccionada = plantillasMeta.find(
     (plantilla) => `${plantilla.name}|${plantilla.language}` === plantillaKey
   );
+
+  const headerFormat =
+    plantillaSeleccionada?.components
+      ?.find((component) => component.type === "HEADER")
+      ?.format?.toUpperCase() || "";
+
+  const requiereImagenHeader =
+    headerFormat === "IMAGE" ||
+    plantillaSeleccionada?.name === "promocion_limpieza_facial";
+
+  const tieneMultimediaNoSoportada =
+    Boolean(plantillaSeleccionada?.tieneMultimedia) &&
+    !requiereImagenHeader;
 
   function crearVariablesBody(): string[] {
     if (!plantillaSeleccionada || plantillaSeleccionada.variableCount <= 0) {
@@ -111,6 +143,7 @@ export default function BotonCampaña({
       setCargandoPlantillas(true);
       setError("");
       setExito("");
+      setImagenHeader(null);
 
       const respuesta: Response = await fetch("/api/whatsapp/plantillas");
       const data = (await respuesta.json()) as RespuestaPlantillas;
@@ -134,6 +167,37 @@ export default function BotonCampaña({
     }
   }
 
+  function manejarCambioPlantilla(valor: string) {
+    setPlantillaKey(valor);
+    setImagenHeader(null);
+    setError("");
+    setExito("");
+  }
+
+  function manejarCambioImagen(archivo?: File | null) {
+    setError("");
+    setExito("");
+
+    if (!archivo) {
+      setImagenHeader(null);
+      return;
+    }
+
+    if (!["image/jpeg", "image/png"].includes(archivo.type)) {
+      setImagenHeader(null);
+      setError("La imagen del encabezado debe ser JPG o PNG.");
+      return;
+    }
+
+    if (archivo.size > 4 * 1024 * 1024) {
+      setImagenHeader(null);
+      setError("La imagen pesa más de 4 MB. Comprime la imagen antes de enviarla.");
+      return;
+    }
+
+    setImagenHeader(archivo);
+  }
+
   async function enviarPorApi() {
     try {
       setError("");
@@ -149,27 +213,57 @@ export default function BotonCampaña({
         return;
       }
 
+      if (tieneMultimediaNoSoportada) {
+        setError(
+          "Esta plantilla tiene multimedia, pero este envío individual solo soporta encabezado con imagen."
+        );
+        return;
+      }
+
+      if (requiereImagenHeader && !imagenHeader) {
+        setError(
+          "Esta plantilla requiere una imagen de encabezado. Adjunta una imagen JPG o PNG antes de enviarla."
+        );
+        return;
+      }
+
       setCargando(true);
+
+      const formData = new FormData();
+
+      formData.append("canal", "api_oficial");
+      formData.append("cliente_id", clienteId);
+      formData.append("plantilla_id", "");
+      formData.append("nombre_cliente", nombreCliente);
+      formData.append("telefono_cliente", telefonoCliente);
+      formData.append("nombre_plantilla", plantillaSeleccionada.name);
+      formData.append(
+        "mensaje_enviado",
+        mensajePreview || plantillaSeleccionada.bodyText
+      );
+      formData.append("meta_template_name", plantillaSeleccionada.name);
+      formData.append("meta_template_language", plantillaSeleccionada.language);
+      formData.append(
+        "meta_variable_count",
+        String(plantillaSeleccionada.variableCount)
+      );
+      formData.append(
+        "meta_body_variables",
+        JSON.stringify(crearVariablesBody())
+      );
+      formData.append(
+        "meta_variable_names",
+        JSON.stringify(plantillaSeleccionada.variableNames ?? [])
+      );
+      formData.append("meta_header_format", headerFormat);
+
+      if (requiereImagenHeader && imagenHeader) {
+        formData.append("meta_header_image_file", imagenHeader);
+      }
 
       const respuesta: Response = await fetch("/api/campanas", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          canal: "api_oficial",
-          cliente_id: clienteId,
-          plantilla_id: null,
-          nombre_cliente: nombreCliente,
-          telefono_cliente: telefonoCliente,
-          nombre_plantilla: plantillaSeleccionada.name,
-          mensaje_enviado: mensajePreview || plantillaSeleccionada.bodyText,
-          meta_template_name: plantillaSeleccionada.name,
-          meta_template_language: plantillaSeleccionada.language,
-          meta_variable_count: plantillaSeleccionada.variableCount,
-          meta_body_variables: crearVariablesBody(),
-          meta_variable_names: plantillaSeleccionada.variableNames ?? [],
-        }),
+        body: formData,
       });
 
       const data = (await respuesta.json()) as RespuestaCampana;
@@ -193,6 +287,7 @@ export default function BotonCampaña({
       setTimeout(() => {
         setAbierto(false);
         setPlantillaKey("");
+        setImagenHeader(null);
         setExito("");
         setError("");
       }, 1500);
@@ -239,7 +334,7 @@ export default function BotonCampaña({
 
             <select
               value={plantillaKey}
-              onChange={(event) => setPlantillaKey(event.target.value)}
+              onChange={(event) => manejarCambioPlantilla(event.target.value)}
               disabled={cargandoPlantillas}
               className="mb-4 w-full rounded border border-gray-300 px-3 py-2 text-sm disabled:opacity-60"
             >
@@ -249,20 +344,35 @@ export default function BotonCampaña({
                   : "Selecciona una plantilla"}
               </option>
 
-              {plantillasMeta.map((plantilla) => (
-                <option
-                  key={`${plantilla.name}-${plantilla.language}`}
-                  value={`${plantilla.name}|${plantilla.language}`}
-                >
-                  {plantilla.name} - {plantilla.language} - {plantilla.category}
-                </option>
-              ))}
+              {plantillasMeta.map((plantilla) => {
+                const formatoHeader =
+                  plantilla.components
+                    ?.find((component) => component.type === "HEADER")
+                    ?.format?.toUpperCase() || "";
+
+                const etiqueta =
+                  formatoHeader === "IMAGE"
+                    ? " - requiere imagen"
+                    : plantilla.tieneMultimedia
+                      ? " - multimedia"
+                      : "";
+
+                return (
+                  <option
+                    key={`${plantilla.name}-${plantilla.language}`}
+                    value={`${plantilla.name}|${plantilla.language}`}
+                  >
+                    {plantilla.name} - {plantilla.language} -{" "}
+                    {plantilla.category}
+                    {etiqueta}
+                  </option>
+                );
+              })}
             </select>
 
             {!cargandoPlantillas && plantillasMeta.length === 0 && (
               <div className="mb-4 rounded border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800">
-                No hay plantillas simples aprobadas en Meta. Crea o aprueba una
-                plantilla sin imagen/carrusel para poder enviarla desde aquí.
+                No hay plantillas aprobadas en Meta para mostrar.
               </div>
             )}
 
@@ -289,6 +399,49 @@ export default function BotonCampaña({
                   {plantillaSeleccionada.variableCount}
                 </p>
 
+                {requiereImagenHeader && (
+                  <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-3">
+                    <label className="mb-1 block text-sm font-semibold text-emerald-800">
+                      Imagen del encabezado
+                    </label>
+
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png"
+                      onChange={(event) =>
+                        manejarCambioImagen(event.target.files?.[0] ?? null)
+                      }
+                      className="w-full rounded border border-emerald-200 bg-white px-3 py-2 text-sm"
+                    />
+
+                    <p className="mt-1 text-xs text-emerald-700">
+                      Adjunta una imagen JPG o PNG. Máximo 4 MB.
+                    </p>
+
+                    {imagenHeader && (
+                      <div className="mt-3">
+                        <p className="text-xs font-semibold text-emerald-800">
+                          {imagenHeader.name} · {formatearTamano(imagenHeader.size)}
+                        </p>
+
+                        <img
+                          src={URL.createObjectURL(imagenHeader)}
+                          alt="Vista previa de encabezado"
+                          className="mt-2 max-h-48 max-w-full rounded border object-contain"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {tieneMultimediaNoSoportada && (
+                  <div className="mt-3 rounded border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800">
+                    Esta plantilla tiene multimedia, pero por ahora este botón
+                    solo soporta plantillas de texto o plantillas con encabezado
+                    de imagen.
+                  </div>
+                )}
+
                 <p className="mt-3 whitespace-pre-wrap rounded bg-white p-2">
                   {mensajePreview}
                 </p>
@@ -296,8 +449,9 @@ export default function BotonCampaña({
             )}
 
             <div className="mb-4 rounded border border-blue-300 bg-blue-50 p-3 text-sm text-blue-800">
-              Solo se muestran plantillas aprobadas de Meta, sin multimedia y
-              con máximo una variable.
+              Puedes enviar plantillas de texto y plantillas con encabezado de
+              imagen. Si la plantilla tiene imagen, debes adjuntarla antes de
+              enviar.
             </div>
 
             {error && (
@@ -318,6 +472,7 @@ export default function BotonCampaña({
                 onClick={() => {
                   setAbierto(false);
                   setPlantillaKey("");
+                  setImagenHeader(null);
                   setError("");
                   setExito("");
                 }}
@@ -330,7 +485,13 @@ export default function BotonCampaña({
               <button
                 type="button"
                 onClick={enviarPorApi}
-                disabled={cargando || cargandoPlantillas || !plantillaSeleccionada}
+                disabled={
+                  cargando ||
+                  cargandoPlantillas ||
+                  !plantillaSeleccionada ||
+                  tieneMultimediaNoSoportada ||
+                  (requiereImagenHeader && !imagenHeader)
+                }
                 className="rounded bg-green-600 px-4 py-2 text-sm text-white hover:bg-green-700 disabled:opacity-60"
               >
                 {cargando ? "Enviando..." : "Enviar por API oficial"}

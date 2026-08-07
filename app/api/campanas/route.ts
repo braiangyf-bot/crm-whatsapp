@@ -22,6 +22,20 @@ function normalizarTelefonoColombia(telefono: string | null | undefined) {
 }
 
 function normalizarVariablesBody(valor: unknown): string[] {
+  if (typeof valor === "string") {
+    const texto = valor.trim();
+
+    if (!texto) {
+      return [];
+    }
+
+    try {
+      return normalizarVariablesBody(JSON.parse(texto));
+    } catch {
+      return [texto];
+    }
+  }
+
   if (!Array.isArray(valor)) {
     return [];
   }
@@ -30,6 +44,20 @@ function normalizarVariablesBody(valor: unknown): string[] {
 }
 
 function normalizarNombresVariablesBody(valor: unknown): string[] {
+  if (typeof valor === "string") {
+    const texto = valor.trim();
+
+    if (!texto) {
+      return [];
+    }
+
+    try {
+      return normalizarNombresVariablesBody(JSON.parse(texto));
+    } catch {
+      return /^[a-z0-9_]+$/.test(texto) ? [texto] : [];
+    }
+  }
+
   if (!Array.isArray(valor)) {
     return [];
   }
@@ -39,6 +67,136 @@ function normalizarNombresVariablesBody(valor: unknown): string[] {
     .filter((nombre) => /^[a-z0-9_]+$/.test(nombre));
 }
 
+type ResultadoSubidaMedia =
+  | {
+      ok: true;
+      mediaId: string;
+      data: unknown;
+    }
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      data: unknown;
+    };
+
+async function subirImagenHeaderMeta(
+  archivo: File
+): Promise<ResultadoSubidaMedia> {
+  const token = process.env.WHATSAPP_TOKEN;
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const version = process.env.WHATSAPP_API_VERSION || "v25.0";
+
+  if (!token) {
+    return {
+      ok: false,
+      status: 500,
+      error: "Falta WHATSAPP_TOKEN en el archivo .env",
+      data: null,
+    };
+  }
+
+  if (!phoneNumberId) {
+    return {
+      ok: false,
+      status: 500,
+      error: "Falta WHATSAPP_PHONE_NUMBER_ID en el archivo .env",
+      data: null,
+    };
+  }
+
+  const tipoArchivo = archivo.type || "";
+
+  if (!["image/jpeg", "image/png"].includes(tipoArchivo)) {
+    return {
+      ok: false,
+      status: 400,
+      error: "La imagen del encabezado debe ser JPG o PNG.",
+      data: {
+        tipo_archivo: tipoArchivo,
+      },
+    };
+  }
+
+  if (archivo.size > 4 * 1024 * 1024) {
+    return {
+      ok: false,
+      status: 400,
+      error:
+        "La imagen pesa más de 4 MB. Comprime la imagen antes de enviarla.",
+      data: {
+        tamano: archivo.size,
+      },
+    };
+  }
+
+  const formData = new FormData();
+
+  formData.append("messaging_product", "whatsapp");
+  formData.append("type", tipoArchivo);
+  formData.append(
+    "file",
+    archivo,
+    archivo.name || (tipoArchivo === "image/png" ? "header.png" : "header.jpg")
+  );
+
+  const respuesta = await fetch(
+    `https://graph.facebook.com/${version}/${phoneNumberId}/media`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    }
+  );
+
+  const data = await respuesta.json().catch(() => null);
+
+  const mediaId =
+    data && typeof data === "object" && "id" in data
+      ? String((data as { id?: unknown }).id || "")
+      : "";
+
+  if (!respuesta.ok || !mediaId) {
+    return {
+      ok: false,
+      status: respuesta.status,
+      error: "Meta rechazó la subida de la imagen del encabezado.",
+      data,
+    };
+  }
+
+  return {
+    ok: true,
+    mediaId,
+    data,
+  };
+}
+
+type ParametroTextoPlantilla = {
+  type: "text";
+  text: string;
+  parameter_name?: string;
+};
+
+type ParametroImagenPlantilla = {
+  type: "image";
+  image: {
+    id: string;
+  };
+};
+
+type ComponentePlantilla =
+  | {
+      type: "header";
+      parameters: ParametroImagenPlantilla[];
+    }
+  | {
+      type: "body";
+      parameters: ParametroTextoPlantilla[];
+    };
+
 async function enviarPlantillaMeta({
   telefono,
   templateName,
@@ -47,6 +205,7 @@ async function enviarPlantillaMeta({
   nombreCliente,
   bodyVariables,
   bodyVariableNames,
+  headerImageMediaId,
 }: {
   telefono: string;
   templateName: string;
@@ -55,6 +214,7 @@ async function enviarPlantillaMeta({
   nombreCliente: string;
   bodyVariables: string[];
   bodyVariableNames: string[];
+  headerImageMediaId?: string | null;
 }) {
   const token = process.env.WHATSAPP_TOKEN;
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -68,25 +228,21 @@ async function enviarPlantillaMeta({
     throw new Error("Falta WHATSAPP_PHONE_NUMBER_ID en el archivo .env");
   }
 
-  const template: {
-    name: string;
-    language: {
-      code: string;
-    };
-    components?: Array<{
-      type: "body";
-      parameters: Array<{
-        type: "text";
-        text: string;
-        parameter_name?: string;
-      }>;
-    }>;
-  } = {
-    name: templateName,
-    language: {
-      code: language,
-    },
-  };
+  const components: ComponentePlantilla[] = [];
+
+  if (headerImageMediaId) {
+    components.push({
+      type: "header",
+      parameters: [
+        {
+          type: "image",
+          image: {
+            id: headerImageMediaId,
+          },
+        },
+      ],
+    });
+  }
 
   if (variableCount === 1) {
     const textoVariable =
@@ -94,11 +250,7 @@ async function enviarPlantillaMeta({
 
     const parameterName = bodyVariableNames[0]?.trim();
 
-    const parametro: {
-      type: "text";
-      text: string;
-      parameter_name?: string;
-    } = {
+    const parametro: ParametroTextoPlantilla = {
       type: "text",
       text: textoVariable,
     };
@@ -107,12 +259,27 @@ async function enviarPlantillaMeta({
       parametro.parameter_name = parameterName;
     }
 
-    template.components = [
-      {
-        type: "body",
-        parameters: [parametro],
-      },
-    ];
+    components.push({
+      type: "body",
+      parameters: [parametro],
+    });
+  }
+
+  const template: {
+    name: string;
+    language: {
+      code: string;
+    };
+    components?: ComponentePlantilla[];
+  } = {
+    name: templateName,
+    language: {
+      code: language,
+    },
+  };
+
+  if (components.length > 0) {
+    template.components = components;
   }
 
   const respuesta = await fetch(
@@ -149,7 +316,23 @@ export async function POST(request: Request) {
   }
 
   try {
-    const body = await request.json();
+    const contentType = request.headers.get("content-type") || "";
+    const esFormulario = contentType
+      .toLowerCase()
+      .includes("multipart/form-data");
+
+    const formData = esFormulario ? await request.formData() : null;
+
+    const body: Record<string, unknown> = formData
+      ? Object.fromEntries(formData.entries())
+      : await request.json();
+
+    const archivoHeader = formData?.get("meta_header_image_file");
+
+    const meta_header_image_file =
+      archivoHeader instanceof File && archivoHeader.size > 0
+        ? archivoHeader
+        : null;
 
     const canal = String(body.canal || "api_oficial");
     const cliente_id = String(body.cliente_id || "");
@@ -158,11 +341,21 @@ export async function POST(request: Request) {
     const meta_template_name = String(body.meta_template_name || "");
     const meta_template_language = String(body.meta_template_language || "es");
     const meta_variable_count = Number(body.meta_variable_count ?? 0);
-    const meta_body_variables = normalizarVariablesBody(body.meta_body_variables);
+    const meta_body_variables = normalizarVariablesBody(
+      body.meta_body_variables
+    );
 
     const meta_variable_names = normalizarNombresVariablesBody(
       body.meta_variable_names
     );
+
+    const meta_header_format = String(
+      body.meta_header_format || ""
+    ).toUpperCase();
+
+    const requiereImagenHeader =
+      meta_header_format === "IMAGE" ||
+      meta_template_name === "promocion_limpieza_facial";
 
     if (canal !== "api_oficial") {
       return NextResponse.json(
@@ -250,7 +443,7 @@ export async function POST(request: Request) {
             estado: cliente.estado,
           },
         },
-        { status: 409 },
+        { status: 409 }
       );
     }
 
@@ -287,6 +480,40 @@ export async function POST(request: Request) {
       );
     }
 
+    let headerImageMediaId: string | null = null;
+
+    if (requiereImagenHeader) {
+      if (!meta_header_image_file) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "Esta plantilla requiere una imagen de encabezado. Adjunta una imagen JPG o PNG antes de enviarla.",
+            codigo: "template_header_image_required",
+          },
+          { status: 400 }
+        );
+      }
+
+      const resultadoSubidaImagen = await subirImagenHeaderMeta(
+        meta_header_image_file
+      );
+
+      if (!resultadoSubidaImagen.ok) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: resultadoSubidaImagen.error,
+            detalle: resultadoSubidaImagen.data,
+            codigo: "template_header_image_upload_failed",
+          },
+          { status: resultadoSubidaImagen.status || 400 }
+        );
+      }
+
+      headerImageMediaId = resultadoSubidaImagen.mediaId;
+    }
+
     const resultadoApi = await enviarPlantillaMeta({
       telefono: telefonoNormalizado,
       templateName: meta_template_name,
@@ -295,6 +522,7 @@ export async function POST(request: Request) {
       nombreCliente: cliente.nombre,
       bodyVariables: meta_body_variables,
       bodyVariableNames: meta_variable_names,
+      headerImageMediaId,
     });
 
     if (!resultadoApi.ok) {
