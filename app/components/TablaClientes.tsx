@@ -19,6 +19,11 @@ type Cliente = {
   notas: string | null;
 };
 
+type ComponentePlantillaMeta = {
+  type: string;
+  format?: string | null;
+};
+
 type PlantillaMeta = {
   name: string;
   language: string;
@@ -27,6 +32,10 @@ type PlantillaMeta = {
   bodyText: string;
   variableCount: number;
   variableNames?: string[];
+  tieneMultimedia?: boolean;
+  components?: ComponentePlantillaMeta[];
+  headerFormat?: string | null;
+  requiereHeaderMedia?: boolean;
 };
 
 type ClienteVistaPrevia = {
@@ -63,36 +72,90 @@ type RespuestaCampana = {
   };
 };
 
-export default function TablaClientes({
-  clientes,
-}: {
-  clientes: Cliente[];
-}) {
+type PayloadCampanaLote = {
+  cliente_ids: string[];
+  mensaje_enviado: string;
+  meta_template_name: string;
+  meta_template_language: string;
+  meta_variable_count: number;
+  meta_body_variables: string[];
+  meta_variable_names: string[];
+  meta_header_format: string;
+  nuevo_estado_cliente: string;
+};
+
+function formatearTamano(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function normalizarNombrePlantilla(nombre: string) {
+  return String(nombre || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\\/g, "")
+    .replace(/\s+/g, "_");
+}
+
+function obtenerHeaderFormat(plantilla: PlantillaMeta | null) {
+  const formatoDirecto = String(plantilla?.headerFormat || "")
+    .trim()
+    .toUpperCase();
+
+  if (formatoDirecto) {
+    return formatoDirecto;
+  }
+
+  return (
+    plantilla?.components
+      ?.find((component) => component.type.toUpperCase() === "HEADER")
+      ?.format?.toUpperCase() || ""
+  );
+}
+
+function plantillaRequiereImagen(plantilla: PlantillaMeta | null) {
+  if (!plantilla) {
+    return false;
+  }
+
+  const nombre = normalizarNombrePlantilla(plantilla.name);
+
+  return (
+    obtenerHeaderFormat(plantilla) === "IMAGE" ||
+    plantilla.requiereHeaderMedia === true ||
+    nombre === "promocion_limpieza_facial" ||
+    nombre.includes("limpieza_facial") ||
+    nombre.includes("promocion_limpieza")
+  );
+}
+
+export default function TablaClientes({ clientes }: { clientes: Cliente[] }) {
   const router = useRouter();
 
   const [seleccionados, setSeleccionados] = useState<string[]>([]);
   const [plantillas, setPlantillas] = useState<PlantillaMeta[]>([]);
-
   const [plantillaSeleccionada, setPlantillaSeleccionada] =
     useState<PlantillaMeta | null>(null);
 
-  const [cargandoPlantillas, setCargandoPlantillas] =
-    useState(false);
-
+  const [cargandoPlantillas, setCargandoPlantillas] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [mensaje, setMensaje] = useState("");
   const [error, setError] = useState("");
   const [montado, setMontado] = useState(false);
-  const [cargandoVistaPrevia, setCargandoVistaPrevia] =
-    useState(false);
-
-  const [vistaPrevia, setVistaPrevia] =
-    useState<VistaPreviaCampana | null>(null);
-
-  const [mostrandoVistaPrevia, setMostrandoVistaPrevia] =
-    useState(false);
-
+  const [cargandoVistaPrevia, setCargandoVistaPrevia] = useState(false);
+  const [vistaPrevia, setVistaPrevia] = useState<VistaPreviaCampana | null>(
+    null
+  );
+  const [mostrandoVistaPrevia, setMostrandoVistaPrevia] = useState(false);
   const [bodyVariables, setBodyVariables] = useState<string[]>([]);
+  const [imagenHeader, setImagenHeader] = useState<File | null>(null);
 
   const LIMITE_SELECCION = 50;
 
@@ -102,32 +165,31 @@ export default function TablaClientes({
 
   const todosPermitidosSeleccionados =
     idsPermitidos.length > 0 &&
-    idsPermitidos.every((id) =>
-      seleccionados.includes(id)
-    );
+    idsPermitidos.every((id) => seleccionados.includes(id));
+
+  const headerFormat = obtenerHeaderFormat(plantillaSeleccionada);
+  const requiereImagenHeader = plantillaRequiereImagen(plantillaSeleccionada);
+
+  const tieneMultimediaNoSoportada =
+    Boolean(plantillaSeleccionada?.tieneMultimedia) && !requiereImagenHeader;
 
   useEffect(() => {
     setMontado(true);
-
 
     async function cargarPlantillas() {
       try {
         setCargandoPlantillas(true);
         setError("");
 
-        const respuesta = await fetch(
-          "/api/whatsapp/plantillas",
-          {
-            cache: "no-store",
-          }
-        );
+        const respuesta = await fetch("/api/whatsapp/plantillas", {
+          cache: "no-store",
+        });
 
         const data = await respuesta.json();
 
         if (!respuesta.ok) {
           throw new Error(
-            data.error ||
-            "No se pudieron cargar las plantillas."
+            data.error || "No se pudieron cargar las plantillas."
           );
         }
 
@@ -145,8 +207,6 @@ export default function TablaClientes({
     }
 
     cargarPlantillas();
-
-
   }, []);
 
   function formatearFecha(fecha: Date | null) {
@@ -154,29 +214,27 @@ export default function TablaClientes({
       return "-";
     }
 
-
     return new Date(fecha).toLocaleString("es-CO", {
       timeZone: "America/Bogota",
     });
+  }
 
-
+  function limpiarResultadoCampana() {
+    setMensaje("");
+    setError("");
+    setVistaPrevia(null);
+    setMostrandoVistaPrevia(false);
   }
 
   function cambiarSeleccion(clienteId: string) {
-    setMensaje("");
-    setError("");
+    limpiarResultadoCampana();
 
     setSeleccionados((actuales) => {
       if (actuales.includes(clienteId)) {
-        return actuales.filter(
-          (id) => id !== clienteId
-        );
+        return actuales.filter((id) => id !== clienteId);
       }
 
-      if (
-        actuales.length >=
-        LIMITE_SELECCION
-      ) {
+      if (actuales.length >= LIMITE_SELECCION) {
         setError(
           `Por seguridad, selecciona máximo ${LIMITE_SELECCION} clientes visibles.`
         );
@@ -186,14 +244,10 @@ export default function TablaClientes({
 
       return [...actuales, clienteId];
     });
-
-
   }
 
   function toggleSeleccionarTodos() {
-    setMensaje("");
-    setError("");
-
+    limpiarResultadoCampana();
 
     if (todosPermitidosSeleccionados) {
       setSeleccionados([]);
@@ -202,16 +256,11 @@ export default function TablaClientes({
 
     setSeleccionados(idsPermitidos);
 
-    if (
-      clientes.length >
-      LIMITE_SELECCION
-    ) {
+    if (clientes.length > LIMITE_SELECCION) {
       setError(
         `Solo se seleccionaron los primeros ${LIMITE_SELECCION} clientes visibles.`
       );
     }
-
-
   }
 
   function crearVariablesIniciales(variableCount: number): string[] {
@@ -220,23 +269,44 @@ export default function TablaClientes({
     }
 
     return Array.from({ length: variableCount }, (_, indice) =>
-      indice === 0 ? "{nombre}" : "",
+      indice === 0 ? "{nombre}" : ""
     );
   }
 
   function cambiarVariableBody(indice: number, valor: string) {
     setBodyVariables((actuales) => {
       const nuevas = [...actuales];
-
       nuevas[indice] = valor;
-
       return nuevas;
     });
 
-    setMensaje("");
+    limpiarResultadoCampana();
+  }
+
+  function manejarCambioImagenHeader(archivo?: File | null) {
     setError("");
+    setMensaje("");
     setVistaPrevia(null);
     setMostrandoVistaPrevia(false);
+
+    if (!archivo) {
+      setImagenHeader(null);
+      return;
+    }
+
+    if (!["image/jpeg", "image/png"].includes(archivo.type)) {
+      setImagenHeader(null);
+      setError("La imagen del encabezado debe ser JPG o PNG.");
+      return;
+    }
+
+    if (archivo.size > 4 * 1024 * 1024) {
+      setImagenHeader(null);
+      setError("La imagen pesa más de 4 MB. Comprime la imagen antes de enviarla.");
+      return;
+    }
+
+    setImagenHeader(archivo);
   }
 
   function validarVariablesFormulario(): string | null {
@@ -263,10 +333,24 @@ export default function TablaClientes({
     return null;
   }
 
-  function seleccionarPagina() {
-    setMensaje("");
-    setError("");
+  function validarMultimediaFormulario(): string | null {
+    if (!plantillaSeleccionada) {
+      return null;
+    }
 
+    if (tieneMultimediaNoSoportada) {
+      return "Esta plantilla tiene multimedia, pero por ahora el envío por lote solo soporta plantillas de texto o plantillas con encabezado de imagen.";
+    }
+
+    if (requiereImagenHeader && !imagenHeader) {
+      return "Esta plantilla requiere una imagen de encabezado. Adjunta una imagen JPG o PNG antes de revisar o enviar el lote.";
+    }
+
+    return null;
+  }
+
+  function seleccionarPagina() {
+    limpiarResultadoCampana();
 
     if (seleccionados.length > 0) {
       setSeleccionados([]);
@@ -275,19 +359,14 @@ export default function TablaClientes({
 
     setSeleccionados(idsPermitidos);
 
-    if (
-      clientes.length >
-      LIMITE_SELECCION
-    ) {
+    if (clientes.length > LIMITE_SELECCION) {
       setError(
         `Solo se seleccionaron los primeros ${LIMITE_SELECCION} clientes visibles.`
       );
     }
-
-
   }
 
-  function crearPayloadCampana() {
+  function crearPayloadCampana(): PayloadCampanaLote | null {
     if (!plantillaSeleccionada) {
       return null;
     }
@@ -301,16 +380,43 @@ export default function TablaClientes({
       meta_body_variables:
         plantillaSeleccionada.variableCount > 0 ? bodyVariables : [],
       meta_variable_names: plantillaSeleccionada.variableNames ?? [],
+      meta_header_format: requiereImagenHeader ? "IMAGE" : headerFormat,
       nuevo_estado_cliente: "contactado",
     };
   }
 
+  function crearFormDataCampana(payload: PayloadCampanaLote) {
+    const formData = new FormData();
+
+    formData.append("cliente_ids", JSON.stringify(payload.cliente_ids));
+    formData.append("mensaje_enviado", payload.mensaje_enviado);
+    formData.append("meta_template_name", payload.meta_template_name);
+    formData.append("meta_template_language", payload.meta_template_language);
+    formData.append(
+      "meta_variable_count",
+      String(payload.meta_variable_count)
+    );
+    formData.append(
+      "meta_body_variables",
+      JSON.stringify(payload.meta_body_variables)
+    );
+    formData.append(
+      "meta_variable_names",
+      JSON.stringify(payload.meta_variable_names)
+    );
+    formData.append("meta_header_format", payload.meta_header_format);
+    formData.append("nuevo_estado_cliente", payload.nuevo_estado_cliente);
+
+    if (requiereImagenHeader && imagenHeader) {
+      formData.append("meta_header_image_file", imagenHeader);
+    }
+
+    return formData;
+  }
+
   async function previsualizarCampanaSeleccionados() {
     try {
-      setMensaje("");
-      setError("");
-      setVistaPrevia(null);
-      setMostrandoVistaPrevia(false);
+      limpiarResultadoCampana();
 
       if (seleccionados.length === 0) {
         setError("Selecciona al menos un cliente.");
@@ -319,7 +425,7 @@ export default function TablaClientes({
 
       if (seleccionados.length > LIMITE_SELECCION) {
         setError(
-          `Solo puedes enviar máximo ${LIMITE_SELECCION} clientes visibles.`,
+          `Solo puedes enviar máximo ${LIMITE_SELECCION} clientes visibles.`
         );
         return;
       }
@@ -336,6 +442,13 @@ export default function TablaClientes({
         return;
       }
 
+      const errorMultimedia = validarMultimediaFormulario();
+
+      if (errorMultimedia) {
+        setError(errorMultimedia);
+        return;
+      }
+
       const payload = crearPayloadCampana();
 
       if (!payload) {
@@ -345,23 +458,18 @@ export default function TablaClientes({
 
       setCargandoVistaPrevia(true);
 
-      const respuesta = await fetch(
-        "/api/campanas/lote/vista-previa",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
+      const respuesta = await fetch("/api/campanas/lote/vista-previa", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify(payload),
+      });
 
       const data = (await respuesta.json()) as VistaPreviaCampana;
 
       if (!respuesta.ok) {
-        throw new Error(
-          data.error || "No se pudo generar la vista previa.",
-        );
+        throw new Error(data.error || "No se pudo generar la vista previa.");
       }
 
       setVistaPrevia(data);
@@ -383,31 +491,20 @@ export default function TablaClientes({
       setMensaje("");
       setError("");
 
-
       if (seleccionados.length === 0) {
-        setError(
-          "Selecciona al menos un cliente."
-        );
-
+        setError("Selecciona al menos un cliente.");
         return;
       }
 
-      if (
-        seleccionados.length >
-        LIMITE_SELECCION
-      ) {
+      if (seleccionados.length > LIMITE_SELECCION) {
         setError(
           `Solo puedes enviar máximo ${LIMITE_SELECCION} clientes por campaña.`
         );
-
         return;
       }
 
       if (!plantillaSeleccionada) {
-        setError(
-          "Selecciona una plantilla aprobada de Meta."
-        );
-
+        setError("Selecciona una plantilla aprobada de Meta.");
         return;
       }
 
@@ -418,7 +515,12 @@ export default function TablaClientes({
         return;
       }
 
-      setEnviando(true);
+      const errorMultimedia = validarMultimediaFormulario();
+
+      if (errorMultimedia) {
+        setError(errorMultimedia);
+        return;
+      }
 
       const payload = crearPayloadCampana();
 
@@ -427,39 +529,28 @@ export default function TablaClientes({
         return;
       }
 
+      setEnviando(true);
+
       const respuesta = await fetch("/api/campanas/lote", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
+        body: crearFormDataCampana(payload),
       });
 
-      const data =
-        (await respuesta.json()) as RespuestaCampana;
+      const data = (await respuesta.json()) as RespuestaCampana;
 
       if (!respuesta.ok) {
-        throw new Error(
-          data.error ||
-          "No se pudo enviar la campaña."
-        );
+        throw new Error(data.error || "No se pudo enviar la campaña.");
       }
 
-      const enviadas =
-        data.enviadas ??
-        data.lote?.total_enviadas ??
-        0;
-
-      const fallidas =
-        data.fallidas ??
-        data.lote?.total_fallidas ??
-        0;
+      const enviadas = data.enviadas ?? data.lote?.total_enviadas ?? 0;
+      const fallidas = data.fallidas ?? data.lote?.total_fallidas ?? 0;
 
       setMensaje(
         `Meta aceptó ${enviadas} solicitud(es). Fallos inmediatos: ${fallidas}. La entrega está pendiente de confirmación.`
       );
 
       setSeleccionados([]);
+      setImagenHeader(null);
       setVistaPrevia(null);
       setMostrandoVistaPrevia(false);
       router.refresh();
@@ -473,552 +564,536 @@ export default function TablaClientes({
     } finally {
       setEnviando(false);
     }
-
-
   }
 
-  return (<section className="rounded-xl border border-gray-200 bg-white shadow-sm"> <div className="border-b border-gray-200 p-4"> <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"> <div> <h2 className="text-lg font-bold text-gray-900">
-    Clientes encontrados </h2>
+  return (
+    <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="border-b border-gray-200 p-4">
+        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">
+              Clientes encontrados
+            </h2>
 
+            <p className="text-sm text-gray-500">
+              Selecciona clientes desde esta misma tabla y envía campañas por
+              API oficial.
+            </p>
+          </div>
 
-    <p className="text-sm text-gray-500">
-      Selecciona clientes desde esta
-      misma tabla y envía campañas por
-      API oficial.
-    </p>
-  </div>
+          <div className="inline-flex h-10 items-center justify-center rounded-lg bg-gray-100 px-4 text-sm font-semibold text-gray-700">
+            {seleccionados.length} seleccionado(s)
+          </div>
+        </div>
 
-    <div className="inline-flex h-10 items-center justify-center rounded-lg bg-gray-100 px-4 text-sm font-semibold text-gray-700">
-      {seleccionados.length}{" "}
-      seleccionado(s)
-    </div>
-  </div>
+        <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
+          <select
+            className="h-11 rounded-lg border border-gray-300 bg-white px-3 text-sm outline-none transition focus:border-black disabled:bg-gray-100"
+            value={
+              plantillaSeleccionada
+                ? `${plantillaSeleccionada.name}__${plantillaSeleccionada.language}`
+                : ""
+            }
+            disabled={cargandoPlantillas || enviando}
+            onChange={(event) => {
+              const [name, language] = event.target.value.split("__");
 
-    <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
-      <select
-        className="h-11 rounded-lg border border-gray-300 bg-white px-3 text-sm outline-none transition focus:border-black disabled:bg-gray-100"
-        value={
-          plantillaSeleccionada
-            ? `${plantillaSeleccionada.name}__${plantillaSeleccionada.language}`
-            : ""
-        }
-        disabled={
-          cargandoPlantillas ||
-          enviando
-        }
-        onChange={(event) => {
-          const [name, language] =
-            event.target.value.split(
-              "__"
-            );
+              const plantilla = plantillas.find(
+                (item) => item.name === name && item.language === language
+              );
 
-          const plantilla =
-            plantillas.find(
-              (item) =>
-                item.name === name &&
-                item.language ===
-                language
-            );
+              setPlantillaSeleccionada(plantilla || null);
 
-          setPlantillaSeleccionada(
-            plantilla || null
-          );
+              setBodyVariables(
+                plantilla ? crearVariablesIniciales(plantilla.variableCount) : []
+              );
 
-          setBodyVariables(
-            plantilla
-              ? crearVariablesIniciales(plantilla.variableCount)
-              : [],
-          );
-
-          setVistaPrevia(null);
-          setMostrandoVistaPrevia(false);
-          setMensaje("");
-          setError("");
-        }}
-      >
-        <option value="">
-          {cargandoPlantillas
-            ? "Cargando plantillas de Meta..."
-            : "Seleccionar plantilla aprobada de Meta"}
-        </option>
-
-        {plantillas.map(
-          (plantilla) => (
-            <option
-              key={`${plantilla.name}-${plantilla.language}`}
-              value={`${plantilla.name}__${plantilla.language}`}
-            >
-              {plantilla.name} -{" "}
-              {plantilla.language}
+              setImagenHeader(null);
+              limpiarResultadoCampana();
+            }}
+          >
+            <option value="">
+              {cargandoPlantillas
+                ? "Cargando plantillas de Meta..."
+                : "Seleccionar plantilla aprobada de Meta"}
             </option>
-          )
-        )}
-      </select>
 
-      <button
-        type="button"
-        onClick={seleccionarPagina}
-        disabled={
-          enviando ||
-          clientes.length === 0
-        }
-        className="inline-flex h-11 min-w-[150px] items-center justify-center rounded-lg bg-gray-900 px-4 text-sm font-semibold text-white transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-400"
-      >
-        {seleccionados.length > 0
-          ? "Quitar selección"
-          : "Seleccionar página"}
-      </button>
+            {plantillas.map((plantilla) => {
+              const requiereImagen = plantillaRequiereImagen(plantilla);
 
-      <button
-        type="button"
-        onClick={previsualizarCampanaSeleccionados}
-        disabled={
-          enviando ||
-          cargandoVistaPrevia ||
-          seleccionados.length === 0 ||
-          !plantillaSeleccionada
-        }
-        className="inline-flex h-11 min-w-[150px] items-center justify-center rounded-lg bg-green-600 px-4 text-sm font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-400"
-      >
-        {cargandoVistaPrevia
-          ? "Revisando..."
-          : enviando
-            ? "Enviando..."
-            : "Revisar campaña"}
-      </button>
-    </div>
-
-    {plantillaSeleccionada && (
-      <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
-        <p className="font-semibold text-gray-900">
-          Vista previa:
-        </p>
-
-        <p className="mt-1">
-          {
-            plantillaSeleccionada.bodyText
-          }
-        </p>
-      </div>
-    )}
-
-    {plantillaSeleccionada &&
-      plantillaSeleccionada.variableCount > 0 && (
-        <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-          <p className="font-semibold">
-            Variables de la plantilla
-          </p>
-
-          <p className="mt-1 text-xs text-blue-800">
-            Puedes usar valores fijos o palabras especiales como{" "}
-            <strong>{"{nombre}"}</strong>,{" "}
-            <strong>{"{telefono}"}</strong> o{" "}
-            <strong>{"{estado}"}</strong>. La primera variable viene por defecto con el nombre del cliente.
-          </p>
-
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            {Array.from({
-              length: plantillaSeleccionada.variableCount,
-            }).map((_, indice) => {
-              const nombreVariable =
-                plantillaSeleccionada.variableNames?.[indice];
-
-              const etiquetaVariable = nombreVariable
-                ? `{{${nombreVariable}}}`
-                : `{{${indice + 1}}}`;
+              const etiqueta = requiereImagen
+                ? " - requiere imagen"
+                : plantilla.tieneMultimedia
+                  ? " - multimedia"
+                  : "";
 
               return (
-                <div key={indice}>
-                  <label className="mb-1 block text-xs font-semibold text-blue-900">
-                    Variable {etiquetaVariable}
-                  </label>
-
-                  <input
-                    value={bodyVariables[indice] ?? ""}
-                    onChange={(event) =>
-                      cambiarVariableBody(indice, event.target.value)
-                    }
-                    placeholder={
-                      indice === 0
-                        ? "{nombre}"
-                        : `Valor para ${etiquetaVariable}`
-                    }
-                    className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-                </div>
+                <option
+                  key={`${plantilla.name}-${plantilla.language}`}
+                  value={`${plantilla.name}__${plantilla.language}`}
+                >
+                  {plantilla.name} - {plantilla.language}
+                  {etiqueta}
+                </option>
               );
             })}
-          </div>
-        </div>
-      )}
+          </select>
 
-    {mensaje && (
-      <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm font-semibold text-green-700">
-        {mensaje}
-      </div>
-    )}
+          <button
+            type="button"
+            onClick={seleccionarPagina}
+            disabled={enviando || clientes.length === 0}
+            className="inline-flex h-11 min-w-[150px] items-center justify-center rounded-lg bg-gray-900 px-4 text-sm font-semibold text-white transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+          >
+            {seleccionados.length > 0 ? "Quitar selección" : "Seleccionar página"}
+          </button>
 
-    {error && (
-      <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
-        {error}
-      </div>
-    )}
-
-    {mostrandoVistaPrevia && vistaPrevia && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-        <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">
-                Revisar campaña antes de enviar
-              </h2>
-
-              <p className="mt-1 text-sm text-gray-500">
-                Confirma los datos antes de enviar mensajes reales por la
-                API oficial de WhatsApp.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setMostrandoVistaPrevia(false)}
-              disabled={enviando}
-              className="rounded-lg border border-gray-300 px-3 py-1 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-            >
-              Cerrar
-            </button>
-          </div>
-
-          <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
-            <p className="text-sm font-semibold text-gray-900">
-              Plantilla:
-            </p>
-
-            <p className="mt-1 text-sm text-gray-700">
-              {plantillaSeleccionada?.name} -{" "}
-              {plantillaSeleccionada?.language}
-            </p>
-
-            <p className="mt-3 text-sm font-semibold text-gray-900">
-              Mensaje:
-            </p>
-
-            <p className="mt-1 whitespace-pre-wrap text-sm text-gray-700">
-              {plantillaSeleccionada?.bodyText}
-            </p>
-          </div>
-
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-lg border border-gray-200 p-3">
-              <p className="text-xs font-semibold text-gray-500">
-                Seleccionados
-              </p>
-              <p className="text-2xl font-bold text-gray-900">
-                {vistaPrevia.total_seleccionados}
-              </p>
-            </div>
-
-            <div className="rounded-lg border border-green-200 bg-green-50 p-3">
-              <p className="text-xs font-semibold text-green-700">
-                Se enviarán
-              </p>
-              <p className="text-2xl font-bold text-green-800">
-                {vistaPrevia.total_enviables}
-              </p>
-            </div>
-
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-              <p className="text-xs font-semibold text-amber-700">
-                Omitidos
-              </p>
-              <p className="text-2xl font-bold text-amber-800">
-                {vistaPrevia.total_omitidos}
-              </p>
-            </div>
-
-            <div className="rounded-lg border border-gray-200 p-3">
-              <p className="text-xs font-semibold text-gray-500">
-                Estado nuevo
-              </p>
-              <p className="text-lg font-bold text-gray-900">
-                Contactado
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-lg border border-gray-200 p-3 text-sm">
-              <p className="font-bold text-gray-900">
-                Motivos de omisión
-              </p>
-
-              <div className="mt-2 space-y-1 text-gray-700">
-                <p>
-                  No encontrados:{" "}
-                  <strong>{vistaPrevia.omitidos_no_encontrados}</strong>
-                </p>
-                <p>
-                  No responde:{" "}
-                  <strong>{vistaPrevia.omitidos_no_responde}</strong>
-                </p>
-                <p>
-                  Duplicados recientes:{" "}
-                  <strong>{vistaPrevia.omitidos_duplicados}</strong>
-                </p>
-                <p>
-                  Teléfono inválido:{" "}
-                  <strong>{vistaPrevia.omitidos_telefono_invalido}</strong>
-                </p>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-gray-200 p-3 text-sm">
-              <p className="font-bold text-gray-900">
-                Clientes que recibirán campaña
-              </p>
-
-              {vistaPrevia.clientes_enviables.length > 0 ? (
-                <ul className="mt-2 max-h-32 space-y-1 overflow-y-auto text-gray-700">
-                  {vistaPrevia.clientes_enviables
-                    .slice(0, 10)
-                    .map((cliente) => (
-                      <li key={cliente.cliente_id}>
-                        {cliente.nombre || "Sin nombre"} -{" "}
-                        {cliente.telefono || "Sin teléfono"}
-                      </li>
-                    ))}
-                </ul>
-              ) : (
-                <p className="mt-2 font-semibold text-red-700">
-                  No hay clientes disponibles para enviar.
-                </p>
-              )}
-            </div>
-          </div>
-
-          {vistaPrevia.clientes_omitidos.length > 0 && (
-            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
-              <p className="font-bold text-amber-900">
-                Primeros clientes omitidos
-              </p>
-
-              <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-amber-900">
-                {vistaPrevia.clientes_omitidos
-                  .slice(0, 10)
-                  .map((cliente) => (
-                    <li key={`${cliente.cliente_id}-${cliente.codigo}`}>
-                      {cliente.nombre || cliente.cliente_id} -{" "}
-                      {cliente.motivo || cliente.codigo}
-                    </li>
-                  ))}
-              </ul>
-            </div>
-          )}
-
-          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              onClick={() => setMostrandoVistaPrevia(false)}
-              disabled={enviando}
-              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-            >
-              Cancelar
-            </button>
-
-            <button
-              type="button"
-              onClick={enviarCampanaSeleccionados}
-              disabled={enviando || vistaPrevia.total_enviables === 0}
-              className="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-400"
-            >
-              {enviando
+          <button
+            type="button"
+            onClick={previsualizarCampanaSeleccionados}
+            disabled={
+              enviando ||
+              cargandoVistaPrevia ||
+              seleccionados.length === 0 ||
+              !plantillaSeleccionada ||
+              tieneMultimediaNoSoportada ||
+              (requiereImagenHeader && !imagenHeader)
+            }
+            className="inline-flex h-11 min-w-[150px] items-center justify-center rounded-lg bg-green-600 px-4 text-sm font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+          >
+            {cargandoVistaPrevia
+              ? "Revisando..."
+              : enviando
                 ? "Enviando..."
-                : `Confirmar y enviar ${vistaPrevia.total_enviables}`}
-            </button>
-          </div>
+                : "Revisar campaña"}
+          </button>
         </div>
-      </div>
-    )}
 
-  </div>
+        {plantillaSeleccionada && (
+          <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+            <p className="font-semibold text-gray-900">Vista previa:</p>
 
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-sm">
-        <thead className="bg-gray-50 text-gray-700">
-          <tr>
-            <th className="border-b border-gray-200 p-3 text-center">
-              <input
-                type="checkbox"
-                checked={
-                  todosPermitidosSeleccionados
-                }
-                onChange={
-                  toggleSeleccionarTodos
-                }
-                disabled={
-                  enviando ||
-                  clientes.length === 0
-                }
-                className="h-4 w-4 cursor-pointer disabled:cursor-not-allowed"
-                title="Seleccionar todos los clientes visibles de esta página"
-              />
-            </th>
+            <p className="mt-1 whitespace-pre-wrap">
+              {plantillaSeleccionada.bodyText}
+            </p>
 
-            <th className="border-b border-gray-200 p-3 text-left">
-              Nombre
-            </th>
+            {requiereImagenHeader && (
+              <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                <label className="mb-1 block text-sm font-semibold text-emerald-800">
+                  Imagen del encabezado
+                </label>
 
-            <th className="border-b border-gray-200 p-3 text-left">
-              Cédula
-            </th>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  onChange={(event) =>
+                    manejarCambioImagenHeader(event.target.files?.[0] ?? null)
+                  }
+                  className="w-full rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm"
+                />
 
-            <th className="border-b border-gray-200 p-3 text-left">
-              Teléfono
-            </th>
+                <p className="mt-1 text-xs text-emerald-700">
+                  Adjunta una imagen JPG o PNG. Máximo 4 MB. Esta imagen se sube
+                  a Meta una sola vez y se usa para todo el lote.
+                </p>
 
-            <th className="border-b border-gray-200 p-3 text-left">
-              Última edición
-            </th>
+                {imagenHeader && (
+                  <div className="mt-3">
+                    <p className="text-xs font-semibold text-emerald-800">
+                      {imagenHeader.name} · {formatearTamano(imagenHeader.size)}
+                    </p>
 
-            <th className="border-b border-gray-200 p-3 text-left">
-              Estado
-            </th>
-
-            <th className="border-b border-gray-200 p-3 text-left">
-              Notas
-            </th>
-
-            <th className="border-b border-gray-200 p-3 text-left">
-              Acciones
-            </th>
-          </tr>
-        </thead>
-
-        <tbody>
-          {clientes.length === 0 && (
-            <tr>
-              <td
-                colSpan={8}
-                className="p-6 text-center text-sm font-semibold text-gray-500"
-              >
-                No hay clientes para
-                mostrar.
-              </td>
-            </tr>
-          )}
-
-          {clientes.map((cliente) => {
-            const estaSeleccionado =
-              seleccionados.includes(
-                cliente.id
-              );
-
-            const seleccionBloqueada =
-              !estaSeleccionado &&
-              seleccionados.length >=
-              LIMITE_SELECCION;
-
-            return (
-              <tr
-                key={cliente.id}
-                className={`transition hover:bg-gray-50 ${estaSeleccionado
-                  ? "bg-green-50"
-                  : "bg-white"
-                  }`}
-              >
-                <td className="border-b border-gray-100 p-3 text-center">
-                  <input
-                    type="checkbox"
-                    checked={
-                      estaSeleccionado
-                    }
-                    onChange={() =>
-                      cambiarSeleccion(
-                        cliente.id
-                      )
-                    }
-                    disabled={
-                      enviando ||
-                      seleccionBloqueada
-                    }
-                    className="h-4 w-4 cursor-pointer disabled:cursor-not-allowed"
-                  />
-                </td>
-
-                <td className="border-b border-gray-100 p-3 font-medium text-gray-900">
-                  {cliente.nombre}
-                </td>
-
-                <td className="border-b border-gray-100 p-3 text-gray-700">
-                  {cliente.cedula}
-                </td>
-
-                <td className="border-b border-gray-100 p-3 text-gray-700">
-                  {cliente.telefono}
-                </td>
-
-                <td
-                  className="border-b border-gray-100 p-3 text-gray-700"
-                  suppressHydrationWarning
-                >
-                  {formatearFecha(
-                    cliente.ultimo_contacto
-                  )}
-                </td>
-
-                <td className="border-b border-gray-100 p-3">
-                  <EstadoSelect
-                    clienteId={cliente.id}
-                    estadoActual={
-                      cliente.estado ||
-                      "pendiente"
-                    }
-                  />
-                </td>
-
-                <td className="border-b border-gray-100 p-3">
-                  <NotasCliente
-                    clienteId={cliente.id}
-                    notaActual={
-                      cliente.notas
-                    }
-                  />
-                </td>
-
-                <td className="border-b border-gray-100 p-3">
-                  <div className="flex flex-wrap gap-2">
-                    <EditarCliente
-                      cliente={cliente}
-                    />
-
-                    <EliminarCliente
-                      id={cliente.id}
-                      nombre={
-                        cliente.nombre
-                      }
-                    />
-
-                    <BotonCampaña
-                      clienteId={
-                        cliente.id
-                      }
-                      nombreCliente={
-                        cliente.nombre
-                      }
-                      telefonoCliente={
-                        cliente.telefono
-                      }
+                    <img
+                      src={URL.createObjectURL(imagenHeader)}
+                      alt="Vista previa de encabezado"
+                      className="mt-2 max-h-48 max-w-full rounded-lg border object-contain"
                     />
                   </div>
+                )}
+              </div>
+            )}
+
+            {tieneMultimediaNoSoportada && (
+              <div className="mt-4 rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-sm font-semibold text-yellow-800">
+                Esta plantilla tiene multimedia, pero por ahora el envío por
+                lote solo soporta plantillas de texto o plantillas con encabezado
+                de imagen.
+              </div>
+            )}
+          </div>
+        )}
+
+        {plantillaSeleccionada && plantillaSeleccionada.variableCount > 0 && (
+          <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+            <p className="font-semibold">Variables de la plantilla</p>
+
+            <p className="mt-1 text-xs text-blue-800">
+              Puedes usar valores fijos o palabras especiales como{" "}
+              <strong>{"{nombre}"}</strong>,{" "}
+              <strong>{"{telefono}"}</strong> o{" "}
+              <strong>{"{estado}"}</strong>. La primera variable viene por
+              defecto con el nombre del cliente.
+            </p>
+
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              {Array.from({
+                length: plantillaSeleccionada.variableCount,
+              }).map((_, indice) => {
+                const nombreVariable =
+                  plantillaSeleccionada.variableNames?.[indice];
+
+                const etiquetaVariable = nombreVariable
+                  ? `{{${nombreVariable}}}`
+                  : `{{${indice + 1}}}`;
+
+                return (
+                  <div key={indice}>
+                    <label className="mb-1 block text-xs font-semibold text-blue-900">
+                      Variable {etiquetaVariable}
+                    </label>
+
+                    <input
+                      value={bodyVariables[indice] ?? ""}
+                      onChange={(event) =>
+                        cambiarVariableBody(indice, event.target.value)
+                      }
+                      placeholder={
+                        indice === 0
+                          ? "{nombre}"
+                          : `Valor para ${etiquetaVariable}`
+                      }
+                      className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {mensaje && (
+          <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm font-semibold text-green-700">
+            {mensaje}
+          </div>
+        )}
+
+        {error && (
+          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
+            {error}
+          </div>
+        )}
+
+        {mostrandoVistaPrevia && vistaPrevia && (
+          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
+            <div className="max-h-[calc(100vh-2rem)] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">
+                    Revisar campaña antes de enviar
+                  </h2>
+
+                  <p className="mt-1 text-sm text-gray-500">
+                    Confirma los datos antes de enviar mensajes reales por la
+                    API oficial de WhatsApp.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setMostrandoVistaPrevia(false)}
+                  disabled={enviando}
+                  className="rounded-lg border border-gray-300 px-3 py-1 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cerrar
+                </button>
+              </div>
+
+              <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <p className="text-sm font-semibold text-gray-900">
+                  Plantilla:
+                </p>
+
+                <p className="mt-1 text-sm text-gray-700">
+                  {plantillaSeleccionada?.name} -{" "}
+                  {plantillaSeleccionada?.language}
+                </p>
+
+                {requiereImagenHeader && imagenHeader && (
+                  <p className="mt-2 text-sm font-semibold text-emerald-700">
+                    Imagen adjunta: {imagenHeader.name}
+                  </p>
+                )}
+
+                <p className="mt-3 text-sm font-semibold text-gray-900">
+                  Mensaje:
+                </p>
+
+                <p className="mt-1 whitespace-pre-wrap text-sm text-gray-700">
+                  {plantillaSeleccionada?.bodyText}
+                </p>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-lg border border-gray-200 p-3">
+                  <p className="text-xs font-semibold text-gray-500">
+                    Seleccionados
+                  </p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {vistaPrevia.total_seleccionados}
+                  </p>
+                </div>
+
+                <div className="rounded-lg border border-green-200 bg-green-50 p-3">
+                  <p className="text-xs font-semibold text-green-700">
+                    Se enviarán
+                  </p>
+                  <p className="text-2xl font-bold text-green-800">
+                    {vistaPrevia.total_enviables}
+                  </p>
+                </div>
+
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-xs font-semibold text-amber-700">
+                    Omitidos
+                  </p>
+                  <p className="text-2xl font-bold text-amber-800">
+                    {vistaPrevia.total_omitidos}
+                  </p>
+                </div>
+
+                <div className="rounded-lg border border-gray-200 p-3">
+                  <p className="text-xs font-semibold text-gray-500">
+                    Estado nuevo
+                  </p>
+                  <p className="text-lg font-bold text-gray-900">Contactado</p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border border-gray-200 p-3 text-sm">
+                  <p className="font-bold text-gray-900">Motivos de omisión</p>
+
+                  <div className="mt-2 space-y-1 text-gray-700">
+                    <p>
+                      No encontrados:{" "}
+                      <strong>{vistaPrevia.omitidos_no_encontrados}</strong>
+                    </p>
+                    <p>
+                      No responde:{" "}
+                      <strong>{vistaPrevia.omitidos_no_responde}</strong>
+                    </p>
+                    <p>
+                      Duplicados recientes:{" "}
+                      <strong>{vistaPrevia.omitidos_duplicados}</strong>
+                    </p>
+                    <p>
+                      Teléfono inválido:{" "}
+                      <strong>{vistaPrevia.omitidos_telefono_invalido}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-gray-200 p-3 text-sm">
+                  <p className="font-bold text-gray-900">
+                    Clientes que recibirán campaña
+                  </p>
+
+                  {vistaPrevia.clientes_enviables.length > 0 ? (
+                    <ul className="mt-2 max-h-32 space-y-1 overflow-y-auto text-gray-700">
+                      {vistaPrevia.clientes_enviables
+                        .slice(0, 10)
+                        .map((cliente) => (
+                          <li key={cliente.cliente_id}>
+                            {cliente.nombre || "Sin nombre"} -{" "}
+                            {cliente.telefono || "Sin teléfono"}
+                          </li>
+                        ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 font-semibold text-red-700">
+                      No hay clientes disponibles para enviar.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {vistaPrevia.clientes_omitidos.length > 0 && (
+                <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
+                  <p className="font-bold text-amber-900">
+                    Primeros clientes omitidos
+                  </p>
+
+                  <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-amber-900">
+                    {vistaPrevia.clientes_omitidos
+                      .slice(0, 10)
+                      .map((cliente) => (
+                        <li key={`${cliente.cliente_id}-${cliente.codigo}`}>
+                          {cliente.nombre || cliente.cliente_id} -{" "}
+                          {cliente.motivo || cliente.codigo}
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => setMostrandoVistaPrevia(false)}
+                  disabled={enviando}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={enviarCampanaSeleccionados}
+                  disabled={enviando || vistaPrevia.total_enviables === 0}
+                  className="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                >
+                  {enviando
+                    ? "Enviando..."
+                    : `Confirmar y enviar ${vistaPrevia.total_enviables}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-sm">
+          <thead className="bg-gray-50 text-gray-700">
+            <tr>
+              <th className="border-b border-gray-200 p-3 text-center">
+                <input
+                  type="checkbox"
+                  checked={todosPermitidosSeleccionados}
+                  onChange={toggleSeleccionarTodos}
+                  disabled={enviando || clientes.length === 0}
+                  className="h-4 w-4 cursor-pointer disabled:cursor-not-allowed"
+                  title="Seleccionar todos los clientes visibles de esta página"
+                />
+              </th>
+
+              <th className="border-b border-gray-200 p-3 text-left">
+                Nombre
+              </th>
+
+              <th className="border-b border-gray-200 p-3 text-left">
+                Cédula
+              </th>
+
+              <th className="border-b border-gray-200 p-3 text-left">
+                Teléfono
+              </th>
+
+              <th className="border-b border-gray-200 p-3 text-left">
+                Última edición
+              </th>
+
+              <th className="border-b border-gray-200 p-3 text-left">
+                Estado
+              </th>
+
+              <th className="border-b border-gray-200 p-3 text-left">
+                Notas
+              </th>
+
+              <th className="border-b border-gray-200 p-3 text-left">
+                Acciones
+              </th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {clientes.length === 0 && (
+              <tr>
+                <td
+                  colSpan={8}
+                  className="p-6 text-center text-sm font-semibold text-gray-500"
+                >
+                  No hay clientes para mostrar.
                 </td>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  </section>
+            )}
 
+            {clientes.map((cliente) => {
+              const estaSeleccionado = seleccionados.includes(cliente.id);
 
+              const seleccionBloqueada =
+                !estaSeleccionado && seleccionados.length >= LIMITE_SELECCION;
+
+              return (
+                <tr
+                  key={cliente.id}
+                  className={`transition hover:bg-gray-50 ${
+                    estaSeleccionado ? "bg-green-50" : "bg-white"
+                  }`}
+                >
+                  <td className="border-b border-gray-100 p-3 text-center">
+                    <input
+                      type="checkbox"
+                      checked={estaSeleccionado}
+                      onChange={() => cambiarSeleccion(cliente.id)}
+                      disabled={enviando || seleccionBloqueada}
+                      className="h-4 w-4 cursor-pointer disabled:cursor-not-allowed"
+                    />
+                  </td>
+
+                  <td className="border-b border-gray-100 p-3 font-medium text-gray-900">
+                    {cliente.nombre}
+                  </td>
+
+                  <td className="border-b border-gray-100 p-3 text-gray-700">
+                    {cliente.cedula}
+                  </td>
+
+                  <td className="border-b border-gray-100 p-3 text-gray-700">
+                    {cliente.telefono}
+                  </td>
+
+                  <td
+                    className="border-b border-gray-100 p-3 text-gray-700"
+                    suppressHydrationWarning
+                  >
+                    {formatearFecha(cliente.ultimo_contacto)}
+                  </td>
+
+                  <td className="border-b border-gray-100 p-3">
+                    <EstadoSelect
+                      clienteId={cliente.id}
+                      estadoActual={cliente.estado || "pendiente"}
+                    />
+                  </td>
+
+                  <td className="border-b border-gray-100 p-3">
+                    <NotasCliente
+                      clienteId={cliente.id}
+                      notaActual={cliente.notas}
+                    />
+                  </td>
+
+                  <td className="border-b border-gray-100 p-3">
+                    <div className="flex flex-wrap gap-2">
+                      <EditarCliente cliente={cliente} />
+
+                      <EliminarCliente id={cliente.id} nombre={cliente.nombre} />
+
+                      <BotonCampaña
+                        clienteId={cliente.id}
+                        nombreCliente={cliente.nombre}
+                        telefonoCliente={cliente.telefono}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
