@@ -21,6 +21,18 @@ type MetaTemplate = {
   components?: MetaTemplateComponent[];
 };
 
+type PlantillaCrm = {
+  name: string;
+  language: string;
+  status: string;
+  category: string;
+  bodyText: string;
+  variableCount: number;
+  variableNames: string[];
+  tieneMultimedia: boolean;
+  components: MetaTemplateComponent[];
+};
+
 function obtenerVariablesPorTexto(texto: string) {
   const variables = Array.from(
     texto.matchAll(/\{\{([a-z0-9_]+)\}\}/g)
@@ -71,7 +83,7 @@ export async function GET() {
       );
     }
 
-    const url = `https://graph.facebook.com/${apiVersion}/${wabaId}/message_templates?fields=name,language,status,category,components`;
+    const url = `https://graph.facebook.com/${apiVersion}/${wabaId}/message_templates?fields=name,language,status,category,components&limit=100`;
 
     const respuesta = await fetch(url, {
       method: "GET",
@@ -94,8 +106,8 @@ export async function GET() {
     }
 
     const plantillasAprobadas = ((data.data || []) as MetaTemplate[])
-      .filter((plantilla) => plantilla.status?.toUpperCase() === "APPROVED")
-      .map((plantilla) => {
+      .filter((plantilla: MetaTemplate) => plantilla.status?.toUpperCase() === "APPROVED")
+      .map((plantilla: MetaTemplate): PlantillaCrm => {
         const cuerpo = plantilla.components?.find(
           (component) => component.type === "BODY"
         );
@@ -136,7 +148,7 @@ export async function GET() {
           components: plantilla.components || [],
         };
       })
-      .filter((plantilla) => !plantilla.tieneMultimedia)
+
       .filter((plantilla) => plantilla.variableCount <= 20);
 
     return NextResponse.json({
