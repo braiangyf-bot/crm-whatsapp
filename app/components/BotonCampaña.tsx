@@ -313,8 +313,8 @@ export default function BotonCampaña({
       </button>
 
       {abierto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-lg">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
+          <div className="max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-lg">
             <h2 className="mb-3 text-lg font-bold text-gray-800">
               Enviar campaña por API oficial
             </h2>
